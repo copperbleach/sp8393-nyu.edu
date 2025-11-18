@@ -1,0 +1,5 @@
+{
+  "name": "Web Ecosystem Simulator",
+  "description": "A dynamic web-based ecosystem simulator where plants grow and creatures move, eat, reproduce, and evolve. Watch as simple rules create complex, life-like behaviors on your screen.",
+  "requestFramePermissions": []
+}
