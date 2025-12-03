@@ -2090,7 +2090,7 @@ const CreationModal = ({ allElementTypes, onSave, onCancel, getConstrainedValue,
                                         <div className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
                                     ) : (
                                         <>
-                                            <img src="https://raw.githubusercontent.com/copperbleach/sp8393-nyu.edu/refs/heads/main/Robot.png" alt="AI Generate" className="h-5 w-5" />
+                                            <img src="https://raw.githubusercontent.com/copperbleach/sp8393-nyu.edu/refs/heads/main/Assets/Robot.png" alt="AI Generate" className="h-5 w-5" />
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                                         </>
                                     )}
