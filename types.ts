@@ -1,3 +1,4 @@
+
 export enum ElementType {
   PLANT,
   CREATURE,
@@ -6,6 +7,18 @@ export enum ElementType {
 // These are now strings to allow for custom user-created types.
 export type PlantType = string;
 export type CreatureType = string;
+
+// --- New Special Ability System ---
+export type SpecialType = string;
+
+export interface SpecialAbility {
+  type: SpecialType;
+  name: string;
+  description: string;
+  enabled: boolean;
+  duration: number; // ms
+  cooldown: number; // ms
+}
 
 // --- Behavior Interfaces ---
 export interface PlantBehavior {
@@ -29,6 +42,7 @@ export interface CreatureBehavior {
   nightActive: boolean;
   eats: string[]; // Array of PlantType or CreatureType strings
   lifespan: number; // ms
+  specials?: SpecialAbility[];
 }
 
 // --- Base Element ---
@@ -61,6 +75,49 @@ export interface Creature extends BaseElement {
   vx: number; // velocity x
   vy: number; // velocity y
   orphanTimestamp?: number;
+  color?: string; // Optional: for mutation like albinism
+  eyeColor?: string; // Optional: for mutation like albinism
+  isCyclops?: boolean; // Optional: for cyclops mutation
+  lastSpecialUsed?: Partial<Record<SpecialType, number>>;
+  hibernationEndTime?: number;
+  spikeEndTime?: number;
 }
 
 export type EcosystemElement = Plant | Creature;
+
+// --- Event Interfaces ---
+export type EventEffect =
+  | 'PLANT_GROWTH_BOOST'
+  | 'ALL_CREATURES_ACTIVE'
+  | 'PLANT_CULL'
+  | 'CREATURE_SPEED_BOOST'
+  | 'PLANT_SIZE_PULSE'
+  | 'REPRODUCTION_BOOST';
+
+export interface WorldEvent {
+  name: string;
+  description: string;
+  duration: number; // in SECONDS
+  effect: EventEffect;
+  visualOverlayColor?: string; // e.g., 'rgba(255, 0, 0, 0.3)'
+}
+
+export interface ActiveEvent extends WorldEvent {
+  id: string;
+  startTime: number;
+}
+
+// --- Visual Effects for Specials ---
+export interface ActiveEffect {
+    id: string;
+    type: SpecialType;
+    x: number;
+    y: number;
+    size: number;
+    startTime: number;
+    duration: number;
+    // For teleportation
+    endX?: number; 
+    endY?: number;
+    creatureId?: string;
+}
