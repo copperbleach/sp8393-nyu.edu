@@ -173,8 +173,8 @@ const CustomCheckbox: React.FC<CustomCheckboxProps> = ({ checked, onChange, id, 
 
 const DayNightIndicator = ({ dayCount, isDay }: { dayCount: number, isDay: boolean }) => {
     const iconSrc = isDay 
-        ? "https://raw.githubusercontent.com/copperbleach/sp8393-nyu.edu/refs/heads/main/Sun.png"
-        : "https://raw.githubusercontent.com/copperbleach/sp8393-nyu.edu/refs/heads/main/Moon.png";
+        ? "https://raw.githubusercontent.com/copperbleach/sp8393-nyu.edu/refs/heads/main/Assets/Sun.png"
+        : "https://raw.githubusercontent.com/copperbleach/sp8393-nyu.edu/refs/heads/main/Assets/Moon.png";
     
     return (
         <div className="flex items-center space-x-3 mb-6 flex-shrink-0">
@@ -355,7 +355,7 @@ const App: React.FC = () => {
   }, [userApiKey]);
 
   const playBabyBornSound = useCallback(() => {
-    const sound = new Audio('https://github.com/copperbleach/sp8393-nyu.edu/raw/refs/heads/main/Bob.wav');
+    const sound = new Audio('https://github.com/copperbleach/sp8393-nyu.edu/raw/refs/heads/main/Assets/Bob.wav');
     sound.play().catch(error => {
       if (error.name !== 'NotAllowedError' && error.name !== 'AbortError') {
         console.error("Error playing sound:", error);
@@ -1555,7 +1555,7 @@ Remember for the 'type' property: "0" is for PLANT and "1" is for CREATURE (it m
                 {isGeneratingEcosystem ? (
                     <div className="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
                 ) : (
-                    <img src="https://raw.githubusercontent.com/copperbleach/sp8393-nyu.edu/refs/heads/main/Robot.png" alt="AI Generate" className="h-5 w-5" />
+                    <img src="https://raw.githubusercontent.com/copperbleach/sp8393-nyu.edu/refs/heads/main/Assets/Robot.png" alt="AI Generate" className="h-5 w-5" />
                 )}
             </button>
             <div className="flex space-x-2">
