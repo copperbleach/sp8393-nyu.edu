@@ -477,6 +477,7 @@ const App: React.FC = () => {
   const [showExtinctionSummary, setShowExtinctionSummary] = useState(false);
   const [lastRunDayCount, setLastRunDayCount] = useState(1);
   const [hadCreaturesInitially, setHadCreaturesInitially] = useState(false);
+  const extinctionEventTriggeredRef = useRef(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const animationFrameId = useRef<number>(0);
@@ -496,14 +497,44 @@ const App: React.FC = () => {
     return key;
   }, [userApiKey]);
 
-  const playBabyBornSound = useCallback(() => {
-    const sound = new Audio('https://github.com/copperbleach/sp8393-nyu.edu/raw/refs/heads/main/Assets/Bob.wav');
+  const playSound = useCallback((soundUrl: string) => {
+    const sound = new Audio(soundUrl);
     sound.play().catch(error => {
       if (error.name !== 'NotAllowedError' && error.name !== 'AbortError') {
         console.error("Error playing sound:", error);
       }
     });
   }, []);
+
+  const playBabyBornSound = useCallback(() => {
+    playSound('https://github.com/copperbleach/sp8393-nyu.edu/raw/refs/heads/main/Assets/Bob.wav');
+  }, [playSound]);
+  
+  const playExtinctionSound = useCallback(() => {
+    playSound('https://github.com/copperbleach/sp8393-nyu.edu/raw/refs/heads/main/Assets/Bell.mp3');
+  }, [playSound]);
+
+  const playDeathSound = useCallback(() => {
+    playSound('https://github.com/copperbleach/sp8393-nyu.edu/raw/refs/heads/main/Assets/Fart.mp3');
+  }, [playSound]);
+
+  const playToxicGasSound = useCallback(() => {
+    playSound('https://github.com/copperbleach/sp8393-nyu.edu/raw/refs/heads/main/Assets/Spray.wav');
+  }, [playSound]);
+
+  const playTeleportSound = useCallback(() => {
+    playSound('https://github.com/copperbleach/sp8393-nyu.edu/raw/refs/heads/main/Assets/Teleport.mp3');
+  }, [playSound]);
+
+  const playMunchSound = useCallback(() => {
+    playSound('https://github.com/copperbleach/sp8393-nyu.edu/raw/refs/heads/main/Assets/Munch.wav');
+  }, [playSound]);
+
+  useEffect(() => {
+    if (showExtinctionSummary) {
+      playExtinctionSound();
+    }
+  }, [showExtinctionSummary, playExtinctionSound]);
 
   const createPlant = useCallback((plantType: PlantType, x: number, y: number, isInitial: boolean = false): Plant => {
     const appearance = appearanceConfig[plantType];
@@ -643,8 +674,10 @@ const App: React.FC = () => {
           if (!creature.isDead) {
               if (now - creature.birthTimestamp > behavior.lifespan) {
                   creature = {...creature, isDead: true, deathTimestamp: now, vx: 0, vy: 0};
+                  playDeathSound();
               } else if (!isHibernating && !creature.isBaby && now - creature.lastAteTimestamp > behavior.starvationTime) {
                   creature = {...creature, isDead: true, deathTimestamp: now, vx: 0, vy: 0};
+                  playDeathSound();
               } else if (creature.isBaby) {
                   const parent = creature.parentId ? elementMap.get(creature.parentId) : null;
                   if (!parent) {
@@ -652,6 +685,7 @@ const App: React.FC = () => {
                           creature = {...creature, orphanTimestamp: now, parentId: undefined};
                       } else if (now - creature.orphanTimestamp > BABY_ORPHAN_SURVIVAL_TIME) {
                           creature = {...creature, isDead: true, deathTimestamp: now, vx: 0, vy: 0};
+                          playDeathSound();
                       }
                   }
               }
@@ -667,6 +701,7 @@ const App: React.FC = () => {
                 if (now - lastUsed > special.cooldown && Math.random() < 0.005) {
                     creature.lastSpecialUsed = { ...creature.lastSpecialUsed, [special.type]: now };
                     if (special.type === 'TOXIC_GAS') {
+                        playToxicGasSound();
                         setActiveEffects(prev => [...prev, { id: crypto.randomUUID(), type: 'TOXIC_GAS', x: creature.x, y: creature.y, size: creature.size * 2, startTime: now, duration: special.duration }]);
                         const radius = creature.size; // reduced radius
                         prevElements.forEach(other => {
@@ -675,6 +710,7 @@ const App: React.FC = () => {
                                     const otherCreature = elementMap.get(other.id) as Creature;
                                     if(otherCreature && !otherCreature.isDead) {
                                         elementMap.set(other.id, {...otherCreature, isDead: true, deathTimestamp: now, vx: 0, vy: 0});
+                                        playDeathSound();
                                     }
                                 } else {
                                     idsToRemove.add(other.id);
@@ -682,6 +718,7 @@ const App: React.FC = () => {
                             }
                         });
                     } else if (special.type === 'TELEPORTATION') {
+                        playTeleportSound();
                         const newX = getRandomNumber(0, bounds.width - creature.size);
                         const newY = getRandomNumber(0, bounds.height - creature.size);
                         setActiveEffects(prev => [...prev, { id: crypto.randomUUID(), type: 'TELEPORTATION', x: creature.x, y: creature.y, endX: newX, endY: newY, size: creature.size, startTime: now, duration: special.duration, creatureId: creature.id }]);
@@ -772,6 +809,7 @@ const App: React.FC = () => {
                       const canEat = !(targetCreature.spikeEndTime && now < targetCreature.spikeEndTime);
                       if (canEat) {
                         idsToRemove.add(target.id); creature = {...creature, lastAteTimestamp: now, targetId: undefined}; 
+                        playMunchSound();
                       } else {
                         creature.targetId = undefined;
                       }
@@ -835,7 +873,8 @@ const App: React.FC = () => {
       const nextElements = [...Array.from(elementMap.values()).filter(el => !idsToRemove.has(el.id)), ...elementsToAdd];
       const livingCreatures = nextElements.filter(el => el.elementType === ElementType.CREATURE && !(el as Creature).isDead);
       
-      if (hadCreaturesInitially && livingCreatures.length === 0 && prevElements.some(el => el.elementType === ElementType.CREATURE && !(el as Creature).isDead)) {
+      if (hadCreaturesInitially && livingCreatures.length === 0 && !extinctionEventTriggeredRef.current) {
+        extinctionEventTriggeredRef.current = true;
         setLastRunDayCount(newDayCount);
         setIsSimRunning(false);
         setShowExtinctionSummary(true);
@@ -844,7 +883,7 @@ const App: React.FC = () => {
       return nextElements;
     });
     animationFrameId.current = requestAnimationFrame(gameLoop);
-  }, [createCreature, createPlant, playBabyBornSound, appearanceConfig, isSimRunning, hadCreaturesInitially]);
+  }, [createCreature, createPlant, playBabyBornSound, appearanceConfig, isSimRunning, hadCreaturesInitially, playDeathSound, playToxicGasSound, playTeleportSound, playMunchSound]);
 
   const handleReboot = () => {
     const configToSave = {
@@ -858,6 +897,7 @@ const App: React.FC = () => {
     setSimBehaviorConfig(behaviorConfig);
     simBehaviorConfigRef.current = behaviorConfig;
 
+    extinctionEventTriggeredRef.current = false;
     setIsSimRunning(true);
     setShowExtinctionSummary(false);
 
