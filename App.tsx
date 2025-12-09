@@ -1,5 +1,5 @@
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { GoogleGenAI, Type } from '@google/genai';
 import { EcosystemElement, ElementType, Plant, Creature, PlantBehavior, CreatureBehavior, PlantType, CreatureType, WorldEvent, ActiveEvent, SpecialAbility, SpecialType, ActiveEffect } from './types';
 
@@ -57,7 +57,7 @@ const initialBehaviorConfig: Record<string, PlantBehavior | CreatureBehavior> = 
     minOffspring: 1, maxOffspring: 3, speed: 20, dayActive: true, nightActive: false, eats: ['GreenDot'], lifespan: 1800000, specials: []
   },
   'Keke': {
-    eatingCooldown: 30000, starvationTime: 90000, reproductionCooldown: 60000, maturationTime: 60000,
+    eatingCooldown: 30000, starvationTime: 90000, reproductionCooldown: 90000, maturationTime: 60000,
     minOffspring: 1, maxOffspring: 1, speed: 25, dayActive: false, nightActive: true, eats: ['Fafa'], lifespan: 3600000, specials: []
   }
 };
@@ -120,6 +120,96 @@ const keyLabelMap: Record<string, string> = {
     'density': 'Density',
     'duration': 'Duration',
     'cooldown': 'Cooldown',
+};
+
+const BehaviorRulesTooltip = ({ elementType }: { elementType: ElementType }) => {
+    const [show, setShow] = useState(false);
+    const [pos, setPos] = useState({ top: 0, left: 0 });
+    const buttonRef = useRef<HTMLButtonElement>(null);
+
+    const handleMouseEnter = () => {
+        if (buttonRef.current) {
+            const rect = buttonRef.current.getBoundingClientRect();
+            setPos({ top: rect.top, left: rect.right + 8 });
+        }
+        setShow(true);
+    };
+
+    const creatureRules = `1 ≤ Speed ≤ 99\n30 ≤ Lifespan ≤ 3600\n5 ≤ Hunger ≤ 180\n30 ≤ Starvation ≤ 180\n5 ≤ Reproduction ≤ 1200\n\n---\n\nHunger < Starvation\nStarvation < Lifespan\nReproduction < Lifespan\nMaturation < Lifespan`;
+    const plantRules = `1 ≤ Lifespan ≤ 3600\n5 ≤ Growth ≤ 360\n10 ≤ Range ≤ 60\n1 ≤ Density ≤ 10`;
+
+    const rulesText = elementType === ElementType.PLANT ? plantRules : creatureRules;
+
+    return (
+        <div className="relative flex items-center">
+            <button
+                ref={buttonRef}
+                onMouseEnter={handleMouseEnter}
+                onMouseLeave={() => setShow(false)}
+                className="w-5 h-5 bg-gray-300 text-white rounded-full flex items-center justify-center text-sm font-light hover:bg-gray-400 transition-colors"
+                aria-label="Show behavior rules"
+            >
+                ?
+            </button>
+            {show && createPortal(
+                <div 
+                    className="p-3 bg-gray-800 text-white text-xs rounded-md shadow-lg w-max whitespace-pre-wrap font-normal"
+                    style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 100 }}
+                >
+                    {rulesText}
+                </div>,
+                document.body
+            )}
+        </div>
+    );
+};
+
+
+// --- New Components ---
+interface ExtinctionSummaryProps {
+    dayCount: number;
+    setTextIOProps: React.Dispatch<React.SetStateAction<{open: boolean; title: string; initialValue: string; mode: 'read' | 'write'; onSave?: ((val: string) => void) | undefined;}>>;
+    onClose: () => void;
+}
+
+const ExtinctionSummary: React.FC<ExtinctionSummaryProps> = ({ dayCount, setTextIOProps, onClose }) => {
+    const [copySuccess, setCopySuccess] = useState(false);
+
+    const handleCopy = () => {
+        const savedConfig = localStorage.getItem('webEcosystemSimulator_lastConfig');
+        if (savedConfig) {
+            navigator.clipboard.writeText(savedConfig).then(() => {
+                setCopySuccess(true);
+                setTimeout(() => setCopySuccess(false), 2000);
+            }).catch(() => {
+                setTextIOProps({
+                    open: true,
+                    title: "Copy Ecosystem DNA",
+                    initialValue: savedConfig,
+                    mode: 'write',
+                });
+            });
+        } else {
+            alert("No saved ecosystem found to copy.");
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex justify-center items-center z-50">
+            <div className="bg-white p-6 rounded-lg shadow-xl text-center flex flex-col items-center space-y-4 w-64 animate-fade-in-down relative">
+                <button onClick={onClose} className="absolute top-2 right-3 text-gray-500 hover:text-gray-800 text-2xl font-bold leading-none" aria-label="Close">
+                    &times;
+                </button>
+                <h3 className="font-bold text-xl text-gray-800">Your Record: {dayCount} Days</h3>
+                <button 
+                    onClick={handleCopy}
+                    className={`px-4 py-2 rounded text-white transition-colors w-full ${copySuccess ? 'bg-green-500' : 'bg-blue-500 hover:bg-blue-600'}`}
+                >
+                    {copySuccess ? "Copied!" : "Copy Ecosystem"}
+                </button>
+            </div>
+        </div>
+    );
 };
 
 const EventNotification: React.FC<{ event: ActiveEvent }> = ({ event }) => {
@@ -298,6 +388,51 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ onSave, onClose }) => {
   );
 };
 
+interface InstanceCounterProps {
+    counts: Record<string, number>;
+    appearanceConfig: Record<string, { size: number; color: string; shape: string; type: ElementType }>;
+}
+
+const InstanceCounter: React.FC<InstanceCounterProps> = ({ counts, appearanceConfig }) => {
+    return (
+        <div className="fixed top-4 right-4 z-40 flex flex-col items-end space-y-1">
+            {Object.keys(appearanceConfig).map((typeName) => {
+                const count = counts[typeName] || 0;
+                const appearance = appearanceConfig[typeName];
+                if (!appearance) return null;
+
+                const shapeStyle = getShapeStyle(appearance.shape);
+                const iconSize = 16;
+
+                return (
+                    <div key={typeName} className="flex items-center justify-end space-x-2">
+                        <span className="font-light text-black text-right min-w-[1.5rem]">{count}</span>
+                        <div 
+                            title={typeName}
+                            className="relative flex justify-center items-center" 
+                            style={{ width: iconSize, height: iconSize }}
+                        >
+                            <div className="absolute w-full h-full" style={{ backgroundColor: appearance.color, ...shapeStyle }} />
+                            {appearance.type === ElementType.CREATURE && (
+                                <div className="absolute w-full h-full flex justify-center items-center">
+                                  <div style={{ 
+                                      display: 'flex', 
+                                      gap: `${Math.max(1, iconSize / 8)}px`, 
+                                      transform: 'translateX(20%)' 
+                                  }}>
+                                      <div className="bg-black rounded-full" style={{ width: `${Math.max(1, iconSize / 5)}px`, height: `${Math.max(1, iconSize / 5)}px` }} />
+                                      <div className="bg-black rounded-full" style={{ width: `${Math.max(1, iconSize / 5)}px`, height: `${Math.max(1, iconSize / 5)}px` }} />
+                                  </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
+
 
 interface MutationConfig {
   albinismChance: number; // in percent, e.g., 0.001 for 0.001%
@@ -309,6 +444,8 @@ const App: React.FC = () => {
   const [selectedInfo, setSelectedInfo] = useState<string | null>(null);
   const [initialCounts, setInitialCounts] = useState<Record<string, number>>({ 'GreenDot': 20, 'Fafa': 5, 'Keke': 2 });
   const [behaviorConfig, setBehaviorConfig] = useState<Record<string, PlantBehavior | CreatureBehavior>>(initialBehaviorConfig);
+  const [simBehaviorConfig, setSimBehaviorConfig] = useState<Record<string, PlantBehavior | CreatureBehavior>>(initialBehaviorConfig);
+  const simBehaviorConfigRef = useRef(initialBehaviorConfig);
   const [appearanceConfig, setAppearanceConfig] = useState(initialAppearanceConfig);
   const [dayCount, setDayCount] = useState(1);
   const [isDay, setIsDay] = useState(true);
@@ -336,6 +473,11 @@ const App: React.FC = () => {
     open: false, title: '', initialValue: '', mode: 'read'
   });
   
+  const [isSimRunning, setIsSimRunning] = useState(true);
+  const [showExtinctionSummary, setShowExtinctionSummary] = useState(false);
+  const [lastRunDayCount, setLastRunDayCount] = useState(1);
+  const [hadCreaturesInitially, setHadCreaturesInitially] = useState(false);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const animationFrameId = useRef<number>(0);
   const lastUpdateTime = useRef<number>(0);
@@ -365,7 +507,7 @@ const App: React.FC = () => {
 
   const createPlant = useCallback((plantType: PlantType, x: number, y: number, isInitial: boolean = false): Plant => {
     const appearance = appearanceConfig[plantType];
-    const behavior = behaviorConfig[plantType] as PlantBehavior;
+    const behavior = simBehaviorConfigRef.current[plantType] as PlantBehavior;
     return {
       id: crypto.randomUUID(),
       elementType: ElementType.PLANT,
@@ -375,12 +517,12 @@ const App: React.FC = () => {
       birthTimestamp: performance.now(),
       lastGrowthTimestamp: isInitial ? performance.now() - getRandomNumber(0, behavior.growth) : performance.now(),
     };
-  }, [appearanceConfig, behaviorConfig]);
+  }, [appearanceConfig]);
 
   const createCreature = useCallback((creatureType: CreatureType, x: number, y: number, isBaby: boolean = false, parentId?: string): Creature => {
     const now = performance.now();
     const appearance = appearanceConfig[creatureType];
-    const behavior = behaviorConfig[creatureType] as CreatureBehavior;
+    const behavior = simBehaviorConfigRef.current[creatureType] as CreatureBehavior;
 
     let creatureColor: string | undefined;
     let creatureEyeColor: string | undefined;
@@ -410,9 +552,13 @@ const App: React.FC = () => {
       isCyclops: creatureIsCyclops,
       lastSpecialUsed: {},
     };
-  }, [appearanceConfig, behaviorConfig, mutationConfig]);
+  }, [appearanceConfig, mutationConfig]);
 
   const gameLoop = useCallback(() => {
+    if (!isSimRunning) {
+        cancelAnimationFrame(animationFrameId.current);
+        return;
+    }
     const now = performance.now();
     if (lastUpdateTime.current === 0) { lastUpdateTime.current = now; animationFrameId.current = requestAnimationFrame(gameLoop); return; }
     const deltaTime = (now - lastUpdateTime.current) / 1000;
@@ -448,7 +594,7 @@ const App: React.FC = () => {
 
         if (element.elementType === ElementType.PLANT) {
           const plant = { ...updatedElement } as Plant;
-          const behavior = behaviorConfig[plant.plantType] as PlantBehavior;
+          const behavior = simBehaviorConfigRef.current[plant.plantType] as PlantBehavior;
           
           if (now - plant.birthTimestamp > behavior.lifespan) {
             idsToRemove.add(plant.id);
@@ -480,7 +626,7 @@ const App: React.FC = () => {
           updatedElement = plant;
         } else if (element.elementType === ElementType.CREATURE) {
           let creature = { ...updatedElement } as Creature;
-          const behavior = { ...behaviorConfig[creature.creatureType] } as CreatureBehavior;
+          const behavior = { ...simBehaviorConfigRef.current[creature.creatureType] } as CreatureBehavior;
           const appearance = appearanceConfig[creature.creatureType];
           
           const isHibernating = creature.hibernationEndTime && now < creature.hibernationEndTime;
@@ -571,7 +717,7 @@ const App: React.FC = () => {
                   const foodFilter = (other: EcosystemElement) => {
                     if (idsToRemove.has(other.id)) return false;
                     
-                    const diet = (behaviorConfig[creature.creatureType] as CreatureBehavior).eats;
+                    const diet = (simBehaviorConfigRef.current[creature.creatureType] as CreatureBehavior).eats;
 
                     if (other.elementType === ElementType.PLANT) {
                         return diet.includes(other.plantType);
@@ -632,7 +778,7 @@ const App: React.FC = () => {
                    } 
                    else if (isReadyToMate && target.elementType === ElementType.CREATURE) {
                       const mate = target as Creature;
-                      const mateBehavior = behaviorConfig[mate.creatureType] as CreatureBehavior;
+                      const mateBehavior = simBehaviorConfigRef.current[mate.creatureType] as CreatureBehavior;
                       if (now - mate.lastReproducedTimestamp > mateBehavior.reproductionCooldown) {
                         const offspringCount = Math.floor(getRandomNumber(behavior.minOffspring, behavior.maxOffspring + 1));
                         if (offspringCount > 0) playBabyBornSound();
@@ -686,12 +832,35 @@ const App: React.FC = () => {
         elementMap.set(updatedElement.id, updatedElement);
       }
 
-      return [...Array.from(elementMap.values()).filter(el => !idsToRemove.has(el.id)), ...elementsToAdd];
+      const nextElements = [...Array.from(elementMap.values()).filter(el => !idsToRemove.has(el.id)), ...elementsToAdd];
+      const livingCreatures = nextElements.filter(el => el.elementType === ElementType.CREATURE && !(el as Creature).isDead);
+      
+      if (hadCreaturesInitially && livingCreatures.length === 0 && prevElements.some(el => el.elementType === ElementType.CREATURE && !(el as Creature).isDead)) {
+        setLastRunDayCount(newDayCount);
+        setIsSimRunning(false);
+        setShowExtinctionSummary(true);
+      }
+      
+      return nextElements;
     });
     animationFrameId.current = requestAnimationFrame(gameLoop);
-  }, [createCreature, createPlant, playBabyBornSound, behaviorConfig, appearanceConfig]);
+  }, [createCreature, createPlant, playBabyBornSound, appearanceConfig, isSimRunning, hadCreaturesInitially]);
 
   const handleReboot = () => {
+    const configToSave = {
+        initialCounts,
+        appearanceConfig,
+        behaviorConfig,
+        mutationConfig,
+    };
+    localStorage.setItem('webEcosystemSimulator_lastConfig', JSON.stringify(configToSave, null, 2));
+
+    setSimBehaviorConfig(behaviorConfig);
+    simBehaviorConfigRef.current = behaviorConfig;
+
+    setIsSimRunning(true);
+    setShowExtinctionSummary(false);
+
     cancelAnimationFrame(animationFrameId.current);
     worldTimeRef.current = 0; 
     setWorldTime(0);
@@ -701,9 +870,13 @@ const App: React.FC = () => {
     if (containerRef.current) {
       const { width, height } = containerRef.current.getBoundingClientRect();
       const initialElements: EcosystemElement[] = [];
+      let hasCreatures = false;
       Object.entries(initialCounts).forEach(([typeName, count]) => {
         const appearance = appearanceConfig[typeName];
-        if (!appearance) return;
+        if (!appearance || count === 0) return;
+        if (appearance.type === ElementType.CREATURE) {
+            hasCreatures = true;
+        }
         for (let i = 0; i < count; i++) {
           const x = getRandomNumber(0, width - appearance.size);
           const y = getRandomNumber(0, height - appearance.size);
@@ -714,6 +887,7 @@ const App: React.FC = () => {
           }
         }
       });
+      setHadCreaturesInitially(hasCreatures);
       setElements(initialElements);
       lastUpdateTime.current = performance.now();
       animationFrameId.current = requestAnimationFrame(gameLoop);
@@ -890,28 +1064,41 @@ const App: React.FC = () => {
       switch(key) {
           case 'speed': minBound = 1; maxBound = 99; break;
           case 'lifespan':
-              minBound = 30; maxBound = 999;
               if (creatureBehavior) {
+                  minBound = 30; maxBound = 3600;
                   minBound = Math.max(minBound, (creatureBehavior.starvationTime / 1000) + 0.001, (creatureBehavior.reproductionCooldown / 1000) + 0.001, (creatureBehavior.maturationTime / 1000) + 0.001);
+              } else { // Is a plant
+                  minBound = 1; maxBound = 3600;
               }
               break;
+          case 'growth':
+              if (!isCreature) { minBound = 5; maxBound = 360; }
+              break;
+          case 'range':
+              if (!isCreature) { minBound = 10; maxBound = 60; }
+              break;
+          case 'density':
+              if (!isCreature) { minBound = 1; maxBound = 10; }
+              break;
           case 'eatingCooldown':
-              minBound = 5; maxBound = 99;
+              minBound = 5; maxBound = 180;
               if (creatureBehavior) maxBound = Math.min(maxBound, (creatureBehavior.starvationTime / 1000) - 0.001);
               break;
           case 'starvationTime':
-              minBound = 30; maxBound = 999;
+              minBound = 30; maxBound = 180;
               if (creatureBehavior) {
                   maxBound = Math.min(maxBound, (creatureBehavior.lifespan / 1000) - 0.001);
                   minBound = Math.max(minBound, (creatureBehavior.eatingCooldown / 1000) + 0.001);
               }
               break;
           case 'reproductionCooldown':
-              minBound = 5; maxBound = 999;
-              if (creatureBehavior) maxBound = Math.min(maxBound, (creatureBehavior.lifespan / 1000) - 0.001);
+              minBound = 5; maxBound = 1200;
+              if (creatureBehavior) {
+                  maxBound = Math.min(maxBound, (creatureBehavior.lifespan / 1000) - 0.001);
+              }
               break;
            case 'maturationTime':
-              minBound = 0; maxBound = 999;
+              minBound = 0; maxBound = 2400;
               if (creatureBehavior) maxBound = Math.min(maxBound, (creatureBehavior.lifespan / 1000) - 0.001);
               break;
           default: minBound = 0; break;
@@ -1414,7 +1601,10 @@ Remember for the 'type' property: "0" is for PLANT and "1" is for CREATURE (it m
             </div>
         </div>
         <div className="overflow-y-auto min-h-0 pr-2">
-            <h4 className="font-bold mt-4 mb-2 border-b border-gray-200 pb-2">Behavior</h4>
+            <h4 className="font-bold mt-4 mb-2 border-b border-gray-200 pb-2 flex justify-between items-center">
+              <span>Behavior</span>
+              <BehaviorRulesTooltip elementType={appearance.type} />
+            </h4>
             <div className="space-y-2 text-sm">
                 <div className="flex justify-between items-center" title={behaviorTooltips['active']}>
                     <label className="text-gray-800">Active:</label>
@@ -1482,6 +1672,24 @@ Remember for the 'type' property: "0" is for PLANT and "1" is for CREATURE (it m
   
   const totalElementCount = Object.keys(appearanceConfig).length;
   const now = performance.now();
+
+  const instanceCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const typeName of Object.keys(appearanceConfig)) {
+        counts[typeName] = 0;
+    }
+
+    for (const element of elements) {
+        if (element.elementType === ElementType.CREATURE && (element as Creature).isDead) {
+            continue;
+        }
+        const typeName = element.elementType === ElementType.PLANT ? (element as Plant).plantType : (element as Creature).creatureType;
+        if (counts[typeName] !== undefined) {
+            counts[typeName]++;
+        }
+    }
+    return counts;
+  }, [elements, appearanceConfig]);
 
   return (
     <div className="flex w-screen h-screen text-gray-800" style={{backgroundColor: '#EBEBEB'}}>
@@ -1638,7 +1846,7 @@ Remember for the 'type' property: "0" is for PLANT and "1" is for CREATURE (it m
             return <div key={element.id} className="absolute z-10" style={{ width: `${element.size}px`, height: `${element.size}px`, transform: `translate(${element.x}px, ${element.y}px)`, backgroundColor: appearance.color, ...shapeStyle, transition: 'width 0.2s, height 0.2s' }} />;
           } else {
             const creature = element as Creature;
-            const behavior = behaviorConfig[creature.creatureType] as CreatureBehavior;
+            const behavior = simBehaviorConfig[creature.creatureType] as CreatureBehavior;
             const eyeSize = creature.size / 5;
             const eyeSpacing = creature.size / 8;
             
@@ -1688,6 +1896,8 @@ Remember for the 'type' property: "0" is for PLANT and "1" is for CREATURE (it m
         })}
       </div>
       
+      <InstanceCounter counts={instanceCounts} appearanceConfig={appearanceConfig} />
+
       <button onClick={() => setShowDebug(prev => !prev)} className="fixed bottom-4 right-4 bg-white p-3 rounded-full shadow-lg hover:bg-gray-100 z-50 border border-gray-300 transition-transform hover:scale-105" title="Debug Tools">
          <svg className="w-6 h-6 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
       </button>
@@ -1762,6 +1972,7 @@ Remember for the 'type' property: "0" is for PLANT and "1" is for CREATURE (it m
       {showCreationModal && <CreationModal allElementTypes={Object.keys(appearanceConfig)} onSave={handleCreateNewElement} onCancel={() => setShowCreationModal(false)} getConstrainedValue={getConstrainedBehaviorValue} getApiKey={getApiKey} />}
       {textIOProps.open && ( <TextIOModal title={textIOProps.title} initialValue={textIOProps.initialValue} mode={textIOProps.mode} onSave={textIOProps.onSave} onClose={() => setTextIOProps(prev => ({ ...prev, open: false }))}/> )}
       {showApiModal && ( <ApiKeyModal onSave={(key) => { setUserApiKey(key); setShowApiModal(false); }} onClose={() => setShowApiModal(false)} /> )}
+      {showExtinctionSummary && <ExtinctionSummary dayCount={lastRunDayCount} setTextIOProps={setTextIOProps} onClose={() => setShowExtinctionSummary(false)} />}
     </div>
   );
 };
@@ -1777,7 +1988,7 @@ const CreationModal = ({ allElementTypes, onSave, onCancel, getConstrainedValue,
     const [showPasteInput, setShowPasteInput] = useState(false);
     const [pasteInputValue, setPasteInputValue] = useState("");
     const [plantBehavior, setPlantBehavior] = useState<PlantBehavior>({ growth: 10000, range: 40, density: 5, dayActive: true, nightActive: false, lifespan: 120000 });
-    const [creatureBehavior, setCreatureBehavior] = useState<Omit<CreatureBehavior, 'eats' | 'specials'>>({ eatingCooldown: 15000, starvationTime: 75000, reproductionCooldown: 45000, maturationTime: 45000, minOffspring: 1, maxOffspring: 2, speed: 18, dayActive: true, nightActive: false, lifespan: 600000 });
+    const [creatureBehavior, setCreatureBehavior] = useState<Omit<CreatureBehavior, 'eats' | 'specials'>>({ eatingCooldown: 15000, starvationTime: 75000, reproductionCooldown: 80000, maturationTime: 45000, minOffspring: 1, maxOffspring: 2, speed: 18, dayActive: true, nightActive: false, lifespan: 600000 });
     const [eats, setEats] = useState<string[]>([]);
     const [specials, setSpecials] = useState<SpecialAbility[]>(() =>
         DEFAULT_SPECIAL_ABILITIES.map(s => ({ ...s, enabled: false }))
@@ -2029,7 +2240,10 @@ const CreationModal = ({ allElementTypes, onSave, onCancel, getConstrainedValue,
                     </div>
 
                     <div className="space-y-2 text-sm">
-                       <h3 className="font-bold border-b pb-2 mb-2">Behavior</h3>
+                       <h3 className="font-bold border-b pb-2 mb-2 flex justify-between items-center">
+                          <span>Behavior</span>
+                          <BehaviorRulesTooltip elementType={type} />
+                       </h3>
                        {type === ElementType.PLANT && (
                         <div className="space-y-2">
                            <div className="flex justify-between items-center" title={behaviorTooltips['active']}>
