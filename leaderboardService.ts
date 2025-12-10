@@ -1,20 +1,32 @@
 import { LeaderboardEntry } from './types';
 
-const GET_LEADERBOARD_URL = 'https://ecosystemsimulator.vercel.app/api/getLeaderboard';
-const SUBMIT_SCORE_URL = 'https://ecosystemsimulator.vercel.app/api/submitScore';
+interface DreamloEntry {
+    name: string;
+    score: string;
+    seconds: string;
+    text: string;
+    date: string;
+}
 
 /**
- * Fetches the top 10 leaderboard scores from the backend.
+ * Fetches the top 10 leaderboard scores via the backend proxy.
  */
 export const getLeaderboard = async (): Promise<LeaderboardEntry[]> => {
     try {
-        const response = await fetch(GET_LEADERBOARD_URL);
+        const response = await fetch('/api/getLeaderboard');
         if (!response.ok) {
             throw new Error(`Failed to fetch leaderboard: ${response.status} ${response.statusText}`);
         }
         const data = await response.json();
-        // The backend might wrap the array, so we check for a 'leaderboard' property or use the data directly.
-        return data.leaderboard || data;
+        const entries: DreamloEntry[] = data.dreamlo?.leaderboard?.entry || [];
+
+        // Map to our LeaderboardEntry type and take the top 10
+        return entries.slice(0, 10).map((entry, index) => ({
+            id: `${entry.name}-${entry.date}-${index}`, // Create a unique ID
+            username: entry.name,
+            score: parseInt(entry.score, 10),
+        }));
+
     } catch (error) {
         console.error("Error fetching leaderboard:", error);
         throw error; // Re-throw the error to be handled by the UI component
@@ -22,21 +34,16 @@ export const getLeaderboard = async (): Promise<LeaderboardEntry[]> => {
 };
 
 /**
- * Submits a new score to the backend.
+ * Submits a new score via the backend proxy.
  */
-export const submitScore = async (name: string, score: number, ecosystemDNA: object): Promise<{ success: true }> => {
-    console.log("ecosystemDNA type:", typeof ecosystemDNA);
+export const submitScore = async (name: string, score: number): Promise<{ success: true }> => {
     try {
-        const response = await fetch(SUBMIT_SCORE_URL, {
+        const response = await fetch('/api/submitScore', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                username: name,
-                score: score,
-                ecosystemDNA: ecosystemDNA,
-            }),
+            body: JSON.stringify({ name, score }),
         });
 
         if (!response.ok) {
@@ -44,7 +51,7 @@ export const submitScore = async (name: string, score: number, ecosystemDNA: obj
             throw new Error(`Failed to submit score: ${response.status} ${response.statusText} - ${errorBody}`);
         }
 
-        return { success: true };
+        return await response.json();
     } catch (error) {
         console.error("Error submitting score:", error);
         throw error; // Re-throw the error to be handled by the UI component

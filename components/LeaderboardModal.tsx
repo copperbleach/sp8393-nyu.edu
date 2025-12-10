@@ -5,10 +5,9 @@ import { getLeaderboard, submitScore } from '../leaderboardService';
 interface LeaderboardModalProps {
     dayCount: number;
     onClose: () => void;
-    onTryEcosystem: (dna: string) => void;
 }
 
-const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ dayCount, onClose, onTryEcosystem }) => {
+const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ dayCount, onClose }) => {
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -16,7 +15,6 @@ const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ dayCount, onClose, 
     const [hasSubmitted, setHasSubmitted] = useState(false);
     const [userEntry, setUserEntry] = useState<{name: string, score: number} | null>(null);
     const nameInputRef = useRef<HTMLInputElement>(null);
-    const [copySuccessId, setCopySuccessId] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchLeaderboard = async () => {
@@ -44,17 +42,10 @@ const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ dayCount, onClose, 
         if (!userName.trim()) return;
         
         const finalUserName = userName.trim().toUpperCase();
-        const savedConfig = localStorage.getItem('webEcosystemSimulator_lastConfig');
-        if (!savedConfig) {
-            alert("Could not find ecosystem DNA to submit.");
-            return;
-        }
-
-        const ecosystemDNAObject = JSON.parse(savedConfig);
 
         setIsSubmitting(true);
         try {
-            await submitScore(finalUserName, dayCount, ecosystemDNAObject);
+            await submitScore(finalUserName, dayCount);
             setUserEntry({ name: finalUserName, score: dayCount });
             setHasSubmitted(true);
             const newData = await getLeaderboard();
@@ -67,24 +58,10 @@ const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ dayCount, onClose, 
         }
     };
     
-    const handleCopyDNA = (dna: string, id: string) => {
-        navigator.clipboard.writeText(dna).then(() => {
-            setCopySuccessId(id);
-            setTimeout(() => setCopySuccessId(null), 2000);
-        });
-    };
-
     const isUserInTop10 = useMemo(() => {
         if (!userEntry) return false;
-        // A simple check; for a real app, you'd use the ID returned from the server
-        return leaderboard.some(e => e.username === userEntry.name && e.score === userEntry.score);
+        return leaderboard.some(e => e.username.toUpperCase() === userEntry.name && e.score === userEntry.score);
     }, [leaderboard, userEntry]);
-    
-    const CopyIcon = ({id}: {id: string}) => (
-        copySuccessId === id ?
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> :
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-    );
 
     return (
         <div className="fixed inset-0 bg-black/60 flex flex-col justify-center items-center z-50 p-4 font-sans animate-fade-in-down">
@@ -109,13 +86,6 @@ const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ dayCount, onClose, 
                                 <span className="w-8 text-right mr-3 opacity-60">{index + 1}</span>
                                 <span className="flex-grow truncate uppercase tracking-wider">{entry.username}</span>
                                 <span className="font-semibold ml-4">{entry.score}</span>
-                                <button
-                                    onClick={() => onTryEcosystem(JSON.stringify(entry.ecosystemDNA, null, 2))}
-                                    className="ml-2 text-gray-400 hover:text-gray-700 transition-colors"
-                                    title={`Try ${entry.username}'s Ecosystem`}
-                                >
-                                    <CopyIcon id={entry.id} />
-                                </button>
                             </li>
                         ))}
                     </ul>
@@ -129,16 +99,6 @@ const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ dayCount, onClose, 
                                 <span className="w-8 text-right mr-3 opacity-60">-</span>
                                 <span className="flex-grow truncate uppercase tracking-wider">{userEntry.name}</span>
                                 <span className="font-semibold ml-4">{userEntry.score}</span>
-                                <button
-                                    onClick={() => {
-                                        const savedConfig = localStorage.getItem('webEcosystemSimulator_lastConfig');
-                                        if (savedConfig) handleCopyDNA(savedConfig, 'user-score');
-                                    }}
-                                    className="ml-2 text-gray-400 hover:text-gray-700 transition-colors"
-                                    title="Copy Your Ecosystem DNA"
-                                >
-                                    <CopyIcon id="user-score" />
-                                </button>
                             </li>
                         </ul>
                     </>

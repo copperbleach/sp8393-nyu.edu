@@ -126,6 +126,4 @@ export interface LeaderboardEntry {
   id: string;
   username: string;
   score: number;
-  ecosystemDNA: object;
-  created_at: string;
 }

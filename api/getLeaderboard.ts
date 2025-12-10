@@ -1,11 +1,6 @@
-// FIX: The original file content was invalid RTF. It has been replaced with the correct Vercel serverless function.
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const GET_LEADERBOARD_URL = 'http://dreamlo.com/lb/6938f3008f40bb1864853868/json';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Set CORS headers for all responses
@@ -22,16 +17,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { data, error } = await supabase
-    .from('leaderboard')
-    .select('*')
-    .order('score', { ascending: false })
-    .limit(10);
+  try {
+    const dreamloResponse = await fetch(GET_LEADERBOARD_URL);
+    if (!dreamloResponse.ok) {
+      console.error('Dreamlo error:', dreamloResponse.status, dreamloResponse.statusText);
+      return res.status(dreamloResponse.status).json({ error: 'Failed to fetch from Dreamlo service' });
+    }
 
-  if (error) {
-    console.error('Supabase error:', error);
-    return res.status(500).json({ error: error.message });
+    const data = await dreamloResponse.json();
+    return res.status(200).json(data);
+  } catch (error) {
+    console.error('Proxy error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    return res.status(500).json({ error: 'Server error in proxy', details: errorMessage });
   }
-
-  return res.status(200).json(data);
 }

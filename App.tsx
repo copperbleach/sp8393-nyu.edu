@@ -497,7 +497,7 @@ const App: React.FC = () => {
       return nextElements;
     });
     animationFrameId.current = requestAnimationFrame(gameLoop);
-  }, [createCreature, createPlant, playBabyBornSound, appearanceConfig, isSimRunning, hadCreaturesInitially, playDeathSound, playToxicGasSound, playTeleportSound, playMunchSound, processGlobalPaste]);
+  }, [createCreature, createPlant, playBabyBornSound, appearanceConfig, isSimRunning, hadCreaturesInitially, playDeathSound, playToxicGasSound, playTeleportSound, playMunchSound]);
 
   const handleReboot = () => {
     const configToSave = {
@@ -588,11 +588,6 @@ const App: React.FC = () => {
             setTextIOProps(prev => ({...prev, open: false}));
         }
     });
-  };
-
-  const handleTryEcosystem = (dna: string) => {
-      processGlobalPaste(dna);
-      setShowExtinctionSummary(false);
   };
 
   const handleExportEvents = () => {
@@ -1561,7 +1556,7 @@ For the 'type' property: "0" is for PLANT and "1" is for CREATURE (it must be a 
       {showCreationModal && <CreationModal allElementTypes={Object.keys(appearanceConfig)} onSave={handleCreateNewElement} onCancel={() => setShowCreationModal(false)} getConstrainedValue={getConstrainedBehaviorValue} getApiKey={getApiKey} />}
       {textIOProps.open && ( <TextIOModal title={textIOProps.title} initialValue={textIOProps.initialValue} mode={textIOProps.mode} onSave={textIOProps.onSave} onClose={() => setTextIOProps(prev => ({ ...prev, open: false }))}/> )}
       {showApiModal && ( <ApiKeyModal onSave={(key) => { setUserApiKey(key); setShowApiModal(false); }} onClose={() => setShowApiModal(false)} /> )}
-      {showExtinctionSummary && <LeaderboardModal dayCount={lastRunDayCount} onClose={() => setShowExtinctionSummary(false)} onTryEcosystem={handleTryEcosystem} />}
+      {showExtinctionSummary && <LeaderboardModal dayCount={lastRunDayCount} onClose={() => setShowExtinctionSummary(false)} />}
     </div>
   );
 };

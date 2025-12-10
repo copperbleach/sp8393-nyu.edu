@@ -1,17 +1,12 @@
-// FIX: The original file was an incomplete snippet. It has been replaced with a full Vercel serverless function implementation.
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const SUBMIT_URL_BASE = 'http://dreamlo.com/lb/2S04HWTVtkiu_E05_TeUEQnqBFW-EtPU6EA2aal5dprQ';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Set CORS headers for all responses
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
     // Handle preflight OPTIONS request
     if (req.method === 'OPTIONS') {
@@ -22,31 +17,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(405).json({ error: 'Method Not Allowed' });
     }
 
-    let { username, score, ecosystemDNA } = req.body;
+    const { name, score } = req.body;
 
-    if (!username || typeof score === 'undefined' || !ecosystemDNA) {
-        return res.status(400).json({ error: 'Missing required fields' });
+    if (!name || typeof score === 'undefined') {
+        return res.status(400).json({ error: 'Missing required fields: name and score' });
     }
+    
+    try {
+        const encodedName = encodeURIComponent(name);
+        const url = `${SUBMIT_URL_BASE}/add/${encodedName}/${score}`;
 
-    // 如果 ecosystemDNA 是字符串 → 自动转成对象
-    if (typeof ecosystemDNA === "string") {
-      try {
-        ecosystemDNA = JSON.parse(ecosystemDNA);
-      } catch (e) {
-        return res.status(400).json({ error: "Invalid ecosystemDNA JSON" });
-      }
+        const dreamloResponse = await fetch(url);
+
+        if (!dreamloResponse.ok) {
+            const errorBody = await dreamloResponse.text();
+            console.error('Dreamlo submission error:', dreamloResponse.status, errorBody);
+            return res.status(dreamloResponse.status).json({ error: 'Failed to submit score to Dreamlo service', details: errorBody });
+        }
+        
+        return res.status(201).json({ success: true });
+
+    } catch (error) {
+        console.error('Proxy submission error:', error);
+        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+        return res.status(500).json({ error: 'Server error in proxy', details: errorMessage });
     }
-
-    const { data, error } = await supabase.from("leaderboard").insert({
-      username,
-      score,
-      ecosystemDNA
-    });
-
-    if (error) {
-        console.error('Supabase error:', error);
-        return res.status(500).json({ error: error.message });
-    }
-
-    return res.status(201).json({ success: true, data });
 }
