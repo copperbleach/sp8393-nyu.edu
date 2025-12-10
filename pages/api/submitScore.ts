@@ -1,5 +1,6 @@
 // FIX: The original file was an incomplete snippet. It has been replaced with a full Vercel serverless function implementation.
-import { VercelRequest, VercelResponse } from '@vercel/node';
+import type { NextApiRequest, NextApiResponse } from 'next';
+
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
