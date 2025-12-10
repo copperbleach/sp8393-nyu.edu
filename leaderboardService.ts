@@ -1,7 +1,7 @@
 import { LeaderboardEntry } from './types';
 
-const GET_LEADERBOARD_URL = '/api/getLeaderboard';
-const SUBMIT_SCORE_URL = '/api/submitScore';
+const GET_LEADERBOARD_URL = 'https://ecosystemsimulator.vercel.app/api/getLeaderboard';
+const SUBMIT_SCORE_URL = 'https://ecosystemsimulator.vercel.app/api/submitScore';
 
 /**
  * Fetches the top 10 leaderboard scores from the backend.
