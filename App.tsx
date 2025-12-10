@@ -215,9 +215,11 @@ const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ dayCount, onClose, 
             return;
         }
 
+        const ecosystemDNAObject = JSON.parse(savedConfig);
+
         setIsSubmitting(true);
         try {
-            await submitScore(finalUserName, dayCount, savedConfig);
+            await submitScore(finalUserName, dayCount, ecosystemDNAObject);
             setUserEntry({ name: finalUserName, score: dayCount });
             setHasSubmitted(true);
             const newData = await getLeaderboard();
