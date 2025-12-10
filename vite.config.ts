@@ -12,7 +12,8 @@ export default defineConfig(({ mode }) => {
       },
       resolve: {
         alias: {
-          '@': path.resolve(__dirname, '.'),
+          // Fix: `__dirname` is not available in all module contexts. Using `process.cwd()` is a reliable way to get the project root.
+          '@': path.resolve(process.cwd(), '.'),
         }
       }
     };
