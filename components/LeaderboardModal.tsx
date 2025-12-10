@@ -8,6 +8,7 @@ interface LeaderboardModalProps {
     onTryEcosystem: (dna: string) => void;
 }
 
+
 const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ dayCount, onClose }) => {
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -100,7 +101,7 @@ const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ dayCount, onClose }
                                 <span className="flex-grow truncate uppercase tracking-wider">
                                     {entry.username}
                                 </span>
-                                <span className="font-semibold ml-4">{entry.score}</span>
+                                <span className="font-semibold ml-2 w-10 text-left">{entry.score}</span>
                             </li>
                         ))}
                     </ul>
