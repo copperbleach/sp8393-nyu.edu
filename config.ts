@@ -27,7 +27,7 @@ export const initialBehaviorConfig: Record<string, PlantBehavior | CreatureBehav
     minOffspring: 1, maxOffspring: 3, speed: 20, dayActive: true, nightActive: false, eats: ['GreenDot'], lifespan: 1800000, specials: []
   },
   'Keke': {
-    eatingCooldown: 30000, starvationTime: 60000, reproductionCooldown: 90000, maturationTime: 60000,
+    eatingCooldown: 30000, starvationTime: 75000, reproductionCooldown: 90000, maturationTime: 60000,
     minOffspring: 1, maxOffspring: 1, speed: 25, dayActive: false, nightActive: true, eats: ['Fafa'], lifespan: 3600000, specials: []
   }
 };
