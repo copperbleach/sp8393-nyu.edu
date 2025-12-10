@@ -1,5 +1,6 @@
 // FIX: The original file content was invalid RTF. It has been replaced with the correct Vercel serverless function.
-import { VercelRequest, VercelResponse } from '@vercel/node';
+import type { NextApiRequest, NextApiResponse } from 'next';
+
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
