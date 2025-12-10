@@ -724,7 +724,7 @@ const App: React.FC = () => {
               if (creatureBehavior) maxBound = Math.min(maxBound, (creatureBehavior.starvationTime / 1000) - 0.001);
               break;
           case 'starvationTime':
-              minBound = 30; maxBound = 180;
+              minBound = 10; maxBound = 180;
               if (creatureBehavior) {
                   maxBound = Math.min(maxBound, (creatureBehavior.lifespan / 1000) - 0.001);
                   minBound = Math.max(minBound, (creatureBehavior.eatingCooldown / 1000) + 0.001);
