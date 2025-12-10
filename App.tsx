@@ -87,6 +87,7 @@ const App: React.FC = () => {
   const animationFrameId = useRef<number>(0);
   const lastUpdateTime = useRef<number>(0);
   const worldTimeRef = useRef(0);
+  const gameLoopRef = useRef<(() => void) | null>(null);
   
   useEffect(() => {
     activeEventRef.current = activeEvent;
@@ -207,7 +208,7 @@ const App: React.FC = () => {
         return;
     }
     const now = performance.now();
-    if (lastUpdateTime.current === 0) { lastUpdateTime.current = now; animationFrameId.current = requestAnimationFrame(gameLoop); return; }
+    if (lastUpdateTime.current === 0) { lastUpdateTime.current = now; animationFrameId.current = requestAnimationFrame(() => gameLoopRef.current?.()); return; }
     const deltaTime = (now - lastUpdateTime.current) / 1000;
     lastUpdateTime.current = now;
     
@@ -226,7 +227,7 @@ const App: React.FC = () => {
     setIsDay(current => newIsDay !== current ? newIsDay : current);
 
     const bounds = containerRef.current?.getBoundingClientRect();
-    if (!bounds) { animationFrameId.current = requestAnimationFrame(gameLoop); return; }
+    if (!bounds) { animationFrameId.current = requestAnimationFrame(() => gameLoopRef.current?.()); return; }
     
     setElements(prevElements => {
       const elementsToAdd: EcosystemElement[] = [];
@@ -497,8 +498,12 @@ const App: React.FC = () => {
       
       return nextElements;
     });
-    animationFrameId.current = requestAnimationFrame(gameLoop);
+    animationFrameId.current = requestAnimationFrame(() => gameLoopRef.current?.());
   }, [createCreature, createPlant, playBabyBornSound, appearanceConfig, isSimRunning, hadCreaturesInitially, playDeathSound, playToxicGasSound, playTeleportSound, playMunchSound]);
+
+  useEffect(() => {
+    gameLoopRef.current = gameLoop;
+  }, [gameLoop]);
 
   const handleReboot = () => {
     const configToSave = {
@@ -545,7 +550,7 @@ const App: React.FC = () => {
       setHadCreaturesInitially(hasCreatures);
       setElements(initialElements);
       lastUpdateTime.current = performance.now();
-      animationFrameId.current = requestAnimationFrame(gameLoop);
+      animationFrameId.current = requestAnimationFrame(() => gameLoopRef.current?.());
     }
   };
 
@@ -1365,7 +1370,7 @@ For the 'type' property: "0" is for PLANT and "1" is for CREATURE (it must be a 
       
       <div ref={containerRef} className="flex-grow h-full overflow-hidden relative" onClick={() => setSelectedInfo(null)}>
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none">
-          {activeEvent && <EventNotification key={activeEvent.id} event={activeEvent} />}
+          {activeEvent && <EventNotification key={activeEvent.id} event={activeEvent} worldTime={performance.now()} />}
         </div>
         
         {activeEvent?.visualOverlayColor && <div className="absolute inset-0 z-20 pointer-events-none" style={{ backgroundColor: activeEvent.visualOverlayColor }} />}
@@ -1557,7 +1562,7 @@ For the 'type' property: "0" is for PLANT and "1" is for CREATURE (it must be a 
       {showCreationModal && <CreationModal allElementTypes={Object.keys(appearanceConfig)} onSave={handleCreateNewElement} onCancel={() => setShowCreationModal(false)} getConstrainedValue={getConstrainedBehaviorValue} getApiKey={getApiKey} />}
       {textIOProps.open && ( <TextIOModal title={textIOProps.title} initialValue={textIOProps.initialValue} mode={textIOProps.mode} onSave={textIOProps.onSave} onClose={() => setTextIOProps(prev => ({ ...prev, open: false }))}/> )}
       {showApiModal && ( <ApiKeyModal onSave={(key) => { setUserApiKey(key); setShowApiModal(false); }} onClose={() => setShowApiModal(false)} /> )}
-      {showExtinctionSummary && <LeaderboardModal dayCount={lastRunDayCount} onClose={() => setShowExtinctionSummary(false)} />}
+      {showExtinctionSummary && <LeaderboardModal dayCount={lastRunDayCount} onClose={() => setShowExtinctionSummary(false)} onTryEcosystem={() => {}} />}
     </div>
   );
 };
