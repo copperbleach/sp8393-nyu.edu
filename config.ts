@@ -23,11 +23,11 @@ export const initialBehaviorConfig: Record<string, PlantBehavior | CreatureBehav
     growth: 15000, range: 30, density: 5, dayActive: true, nightActive: false, lifespan: 120000,
   },
   'Fafa': {
-    eatingCooldown: 10000, starvationTime: 60000, reproductionCooldown: 60000, maturationTime: 30000,
+    eatingCooldown: 10000, starvationTime: 30000, reproductionCooldown: 60000, maturationTime: 30000,
     minOffspring: 1, maxOffspring: 3, speed: 20, dayActive: true, nightActive: false, eats: ['GreenDot'], lifespan: 1800000, specials: []
   },
   'Keke': {
-    eatingCooldown: 30000, starvationTime: 90000, reproductionCooldown: 90000, maturationTime: 60000,
+    eatingCooldown: 30000, starvationTime: 60000, reproductionCooldown: 90000, maturationTime: 60000,
     minOffspring: 1, maxOffspring: 1, speed: 25, dayActive: false, nightActive: true, eats: ['Fafa'], lifespan: 3600000, specials: []
   }
 };
