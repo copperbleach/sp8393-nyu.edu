@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { GoogleGenAI, Type } from '@google/genai';
-import { EcosystemElement, ElementType, Plant, Creature, PlantBehavior, CreatureBehavior, PlantType, CreatureType, WorldEvent, ActiveEvent, SpecialAbility, SpecialType, ActiveEffect } from './types';
+import { EcosystemElement, ElementType, Plant, Creature, PlantBehavior, CreatureBehavior, PlantType, CreatureType, WorldEvent, ActiveEvent, SpecialAbility, SpecialType, ActiveEffect, LeaderboardEntry } from './types';
+import { getLeaderboard, submitScore } from './leaderboardService';
 
 
 // --- New Special Abilities Constant ---
@@ -166,51 +167,171 @@ const BehaviorRulesTooltip = ({ elementType }: { elementType: ElementType }) => 
 
 
 // --- New Components ---
-interface ExtinctionSummaryProps {
+interface LeaderboardModalProps {
     dayCount: number;
-    setTextIOProps: React.Dispatch<React.SetStateAction<{open: boolean; title: string; initialValue: string; mode: 'read' | 'write'; onSave?: ((val: string) => void) | undefined;}>>;
     onClose: () => void;
+    onTryEcosystem: (dna: string) => void;
 }
 
-const ExtinctionSummary: React.FC<ExtinctionSummaryProps> = ({ dayCount, setTextIOProps, onClose }) => {
-    const [copySuccess, setCopySuccess] = useState(false);
+const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ dayCount, onClose, onTryEcosystem }) => {
+    const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [userName, setUserName] = useState('');
+    const [hasSubmitted, setHasSubmitted] = useState(false);
+    const [userEntry, setUserEntry] = useState<{name: string, score: number} | null>(null);
+    const nameInputRef = useRef<HTMLInputElement>(null);
+    const [copySuccessId, setCopySuccessId] = useState<string | null>(null);
 
-    const handleCopy = () => {
+    useEffect(() => {
+        const fetchLeaderboard = async () => {
+            setIsLoading(true);
+            try {
+                const data = await getLeaderboard();
+                setLeaderboard(data);
+            } catch (error) {
+                console.error("Failed to fetch leaderboard", error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchLeaderboard();
+    }, []);
+    
+    useEffect(() => {
+        if (!isLoading && !hasSubmitted && nameInputRef.current) {
+            nameInputRef.current.focus();
+        }
+    }, [isLoading, hasSubmitted]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!userName.trim()) return;
+        
+        const finalUserName = userName.trim().toUpperCase();
         const savedConfig = localStorage.getItem('webEcosystemSimulator_lastConfig');
-        if (savedConfig) {
-            navigator.clipboard.writeText(savedConfig).then(() => {
-                setCopySuccess(true);
-                setTimeout(() => setCopySuccess(false), 2000);
-            }).catch(() => {
-                setTextIOProps({
-                    open: true,
-                    title: "Copy Ecosystem DNA",
-                    initialValue: savedConfig,
-                    mode: 'write',
-                });
-            });
-        } else {
-            alert("No saved ecosystem found to copy.");
+        if (!savedConfig) {
+            alert("Could not find ecosystem DNA to submit.");
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            await submitScore(finalUserName, dayCount, savedConfig);
+            setUserEntry({ name: finalUserName, score: dayCount });
+            setHasSubmitted(true);
+            const newData = await getLeaderboard();
+            setLeaderboard(newData);
+        } catch (error) {
+            console.error("Failed to submit score", error);
+            alert("Failed to submit score. Please try again.");
+        } finally {
+            setIsSubmitting(false);
         }
     };
+    
+    const handleCopyDNA = (dna: string, id: string) => {
+        navigator.clipboard.writeText(dna).then(() => {
+            setCopySuccessId(id);
+            setTimeout(() => setCopySuccessId(null), 2000);
+        });
+    };
+
+    const isUserInTop10 = useMemo(() => {
+        if (!userEntry) return false;
+        // A simple check; for a real app, you'd use the ID returned from the server
+        return leaderboard.some(e => e.name === userEntry.name && e.score === userEntry.score);
+    }, [leaderboard, userEntry]);
+    
+    const CopyIcon = ({id}: {id: string}) => (
+        copySuccessId === id ?
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> :
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+    );
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex justify-center items-center z-50">
-            <div className="bg-white p-6 rounded-lg shadow-xl text-center flex flex-col items-center space-y-4 w-64 animate-fade-in-down relative">
-                <button onClick={onClose} className="absolute top-2 right-3 text-gray-500 hover:text-gray-800 text-2xl font-bold leading-none" aria-label="Close">
-                    &times;
-                </button>
-                <h3 className="font-bold text-xl text-gray-800">Your Record: {dayCount} Days</h3>
-                <button 
-                    onClick={handleCopy}
-                    className={`px-4 py-2 rounded text-white transition-colors w-full ${copySuccess ? 'bg-green-500' : 'bg-blue-500 hover:bg-blue-600'}`}
-                >
-                    {copySuccess ? "Copied!" : "Copy Ecosystem"}
-                </button>
+        <div className="fixed inset-0 bg-black/60 flex flex-col justify-center items-center z-50 p-4 font-sans animate-fade-in-down">
+            <h1 className="text-6xl font-extrabold text-red-500 mb-4 tracking-wider" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.3)' }}>
+                EXTINCTION
+            </h1>
+            <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-sm relative">
+                <h2 className="text-3xl font-bold text-gray-800 text-center mb-6">
+                    DAYS SURVIVED: {dayCount}
+                </h2>
+                
+                {isLoading && (
+                    <div className="flex justify-center items-center h-64">
+                        <div className="w-10 h-10 border-4 border-gray-200 border-t-gray-600 rounded-full animate-spin"></div>
+                    </div>
+                )}
+
+                {!isLoading && (
+                     <ul className="space-y-3 text-lg font-medium text-gray-700">
+                        {leaderboard.map((entry, index) => (
+                            <li key={entry.id} className="flex items-center">
+                                <span className="w-8 text-right mr-3 opacity-60">{index + 1}</span>
+                                <span className="flex-grow truncate uppercase tracking-wider">{entry.name}</span>
+                                <span className="font-semibold ml-4">{entry.score}</span>
+                                <button
+                                    onClick={() => onTryEcosystem(entry.ecosystemDNA)}
+                                    className="ml-2 text-gray-400 hover:text-gray-700 transition-colors"
+                                    title={`Try ${entry.name}'s Ecosystem`}
+                                >
+                                    <CopyIcon id={entry.id} />
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+                
+                {hasSubmitted && userEntry && !isUserInTop10 && (
+                    <>
+                        <div className="border-t-2 border-dashed border-gray-300 my-4"></div>
+                        <ul className="text-lg font-medium text-gray-700">
+                            <li className="flex items-center">
+                                <span className="w-8 text-right mr-3 opacity-60">-</span>
+                                <span className="flex-grow truncate uppercase tracking-wider">{userEntry.name}</span>
+                                <span className="font-semibold ml-4">{userEntry.score}</span>
+                                <button
+                                    onClick={() => {
+                                        const savedConfig = localStorage.getItem('webEcosystemSimulator_lastConfig');
+                                        if (savedConfig) handleCopyDNA(savedConfig, 'user-score');
+                                    }}
+                                    className="ml-2 text-gray-400 hover:text-gray-700 transition-colors"
+                                    title="Copy Your Ecosystem DNA"
+                                >
+                                    <CopyIcon id="user-score" />
+                                </button>
+                            </li>
+                        </ul>
+                    </>
+                )}
+
+
+                {!hasSubmitted && !isLoading && (
+                    <form onSubmit={handleSubmit} className="mt-6 flex items-center space-x-2">
+                        <input
+                            ref={nameInputRef}
+                            type="text"
+                            value={userName}
+                            onChange={(e) => setUserName(e.target.value)}
+                            maxLength={10}
+                            placeholder="YOUR NAME"
+                            className="flex-grow px-3 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 transition uppercase tracking-wider text-center"
+                        />
+                        <button type="submit" className="flex-shrink-0 p-2 text-gray-600 hover:text-green-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center w-[44px] h-[44px]" disabled={!userName.trim() || isSubmitting}>
+                           {isSubmitting ? <div className="w-6 h-6 border-4 border-gray-200 border-t-gray-600 rounded-full animate-spin"></div> : <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                        </button>
+                    </form>
+                )}
             </div>
+            <button onClick={onClose} className="mt-8 bg-white/80 rounded-full p-2 shadow-lg hover:bg-white transition-transform transform hover:scale-110">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
         </div>
     );
 };
+
 
 const EventNotification: React.FC<{ event: ActiveEvent }> = ({ event }) => {
   const [timeLeft, setTimeLeft] = useState(Math.ceil(event.duration));
@@ -585,6 +706,26 @@ const App: React.FC = () => {
     };
   }, [appearanceConfig, mutationConfig]);
 
+  const processGlobalPaste = (text: string) => {
+    try {
+        const config = JSON.parse(text);
+        if (config.initialCounts && config.appearanceConfig && config.behaviorConfig) {
+            setInitialCounts(config.initialCounts as Record<string, number>);
+            setAppearanceConfig(config.appearanceConfig as typeof initialAppearanceConfig);
+            setBehaviorConfig(config.behaviorConfig as Record<string, PlantBehavior | CreatureBehavior>);
+            if (config.mutationConfig) {
+              setMutationConfig(config.mutationConfig as MutationConfig);
+            }
+            alert("Configuration imported! Click Reboot to apply.");
+        } else {
+            alert("Invalid configuration format.");
+        }
+    } catch (err) {
+        console.error("Failed to parse pasted config: ", err);
+        alert("Invalid JSON");
+    }
+  };
+
   const gameLoop = useCallback(() => {
     if (!isSimRunning) {
         cancelAnimationFrame(animationFrameId.current);
@@ -883,7 +1024,7 @@ const App: React.FC = () => {
       return nextElements;
     });
     animationFrameId.current = requestAnimationFrame(gameLoop);
-  }, [createCreature, createPlant, playBabyBornSound, appearanceConfig, isSimRunning, hadCreaturesInitially, playDeathSound, playToxicGasSound, playTeleportSound, playMunchSound]);
+  }, [createCreature, createPlant, playBabyBornSound, appearanceConfig, isSimRunning, hadCreaturesInitially, playDeathSound, playToxicGasSound, playTeleportSound, playMunchSound, processGlobalPaste]);
 
   const handleReboot = () => {
     const configToSave = {
@@ -955,26 +1096,6 @@ const App: React.FC = () => {
         });
   };
 
-  const processGlobalPaste = (text: string) => {
-    try {
-        const config = JSON.parse(text);
-        if (config.initialCounts && config.appearanceConfig && config.behaviorConfig) {
-            setInitialCounts(config.initialCounts as Record<string, number>);
-            setAppearanceConfig(config.appearanceConfig as typeof initialAppearanceConfig);
-            setBehaviorConfig(config.behaviorConfig as Record<string, PlantBehavior | CreatureBehavior>);
-            if (config.mutationConfig) {
-              setMutationConfig(config.mutationConfig as MutationConfig);
-            }
-            alert("Configuration imported! Click Reboot to apply.");
-        } else {
-            alert("Invalid configuration format.");
-        }
-    } catch (err) {
-        console.error("Failed to parse pasted config: ", err);
-        alert("Invalid JSON");
-    }
-  };
-
   const handleGlobalPaste = async () => {
     try {
         const text = await navigator.clipboard.readText();
@@ -994,6 +1115,11 @@ const App: React.FC = () => {
             setTextIOProps(prev => ({...prev, open: false}));
         }
     });
+  };
+
+  const handleTryEcosystem = (dna: string) => {
+      processGlobalPaste(dna);
+      setShowExtinctionSummary(false);
   };
 
   const handleExportEvents = () => {
@@ -2012,7 +2138,7 @@ Remember for the 'type' property: "0" is for PLANT and "1" is for CREATURE (it m
       {showCreationModal && <CreationModal allElementTypes={Object.keys(appearanceConfig)} onSave={handleCreateNewElement} onCancel={() => setShowCreationModal(false)} getConstrainedValue={getConstrainedBehaviorValue} getApiKey={getApiKey} />}
       {textIOProps.open && ( <TextIOModal title={textIOProps.title} initialValue={textIOProps.initialValue} mode={textIOProps.mode} onSave={textIOProps.onSave} onClose={() => setTextIOProps(prev => ({ ...prev, open: false }))}/> )}
       {showApiModal && ( <ApiKeyModal onSave={(key) => { setUserApiKey(key); setShowApiModal(false); }} onClose={() => setShowApiModal(false)} /> )}
-      {showExtinctionSummary && <ExtinctionSummary dayCount={lastRunDayCount} setTextIOProps={setTextIOProps} onClose={() => setShowExtinctionSummary(false)} />}
+      {showExtinctionSummary && <LeaderboardModal dayCount={lastRunDayCount} onClose={() => setShowExtinctionSummary(false)} onTryEcosystem={handleTryEcosystem} />}
     </div>
   );
 };
