@@ -19,7 +19,7 @@ const BehaviorRulesTooltip: React.FC<BehaviorRulesTooltipProps> = ({ elementType
         setShow(true);
     };
 
-    const creatureRules = `1 ≤ Speed ≤ 99\n30 ≤ Lifespan ≤ 3600\n5 ≤ Hunger ≤ 180\n30 ≤ Starvation ≤ 180\n5 ≤ Reproduction ≤ 1200\n\n---\n\nHunger < Starvation\nStarvation < Lifespan\nReproduction < Lifespan\nMaturation < Lifespan`;
+    const creatureRules = `1 ≤ Speed ≤ 99\n30 ≤ Lifespan ≤ 3600\n5 ≤ Hunger ≤ 180\n10 ≤ Starvation ≤ 180\n5 ≤ Reproduction ≤ 1200\n\n---\n\nHunger < Starvation\nStarvation < Lifespan\nReproduction < Lifespan\nMaturation < Lifespan`;
     const plantRules = `1 ≤ Lifespan ≤ 3600\n5 ≤ Growth ≤ 360\n10 ≤ Range ≤ 60\n1 ≤ Density ≤ 10`;
 
     const rulesText = elementType === ElementType.PLANT ? plantRules : creatureRules;
