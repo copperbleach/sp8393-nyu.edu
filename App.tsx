@@ -1,560 +1,32 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import { GoogleGenAI, Type } from '@google/genai';
-import { EcosystemElement, ElementType, Plant, Creature, PlantBehavior, CreatureBehavior, PlantType, CreatureType, WorldEvent, ActiveEvent, SpecialAbility, SpecialType, ActiveEffect, LeaderboardEntry } from './types';
+import { EcosystemElement, ElementType, Plant, Creature, PlantBehavior, CreatureBehavior, PlantType, CreatureType, WorldEvent, ActiveEvent, ActiveEffect, LeaderboardEntry } from './types';
 import { getLeaderboard, submitScore } from './leaderboardService';
+import { getRandomNumber, distance, lerp, getShapeStyle } from './utils';
+import {
+    initialBehaviorConfig,
+    initialAppearanceConfig,
+    predefinedEvents,
+    DEATH_DURATION,
+    FULL_DAY_DURATION,
+    DAY_DURATION,
+    BABY_ORPHAN_SURVIVAL_TIME,
+    MAX_TOTAL_ELEMENTS,
+    PRECONFIGURED_API_KEY,
+    behaviorTooltips,
+    keyLabelMap
+} from './config';
 
-
-// --- New Special Abilities Constant ---
-const DEFAULT_SPECIAL_ABILITIES: SpecialAbility[] = [
-    { type: 'TOXIC_GAS', name: 'Toxic Gas', description: 'Releases a deadly gas cloud that kills nearby elements.', enabled: false, duration: 3000, cooldown: 15000 },
-    { type: 'TELEPORTATION', name: 'Teleportation', description: 'Instantly teleports to a random location.', enabled: false, duration: 500, cooldown: 25000 },
-    { type: 'HIBERNATION', name: 'Hibernation', description: 'Enters a deep sleep, stopping hunger but remaining vulnerable.', enabled: false, duration: 45000, cooldown: 30000 },
-    { type: 'SPIKE', name: 'Spike', description: 'Grows defensive spikes, preventing predators from eating it.', enabled: false, duration: 5000, cooldown: 5000 },
-];
-
-// --- Constants ---
-const DEATH_DURATION = 10000; // 10 seconds
-const DAY_DURATION = 30000; // 30 seconds
-const NIGHT_DURATION = 30000; // 30 seconds
-const FULL_DAY_DURATION = DAY_DURATION + NIGHT_DURATION;
-const MAX_TOTAL_ELEMENTS = 9;
-const BABY_ORPHAN_SURVIVAL_TIME = 30000; // 30 seconds
-const PRECONFIGURED_API_KEY = process.env.API_KEY;
-
-// --- Helper Functions ---
-const getRandomNumber = (min: number, max: number) => Math.random() * (max - min) + min;
-const distance = (el1: {x:number, y:number}, el2: {x:number, y:number}) => Math.sqrt(Math.pow(el1.x - el2.x, 2) + Math.pow(el1.y - el2.y, 2));
-const lerp = (start: number, end: number, amt: number) => (1 - amt) * start + amt * end;
-
-// --- Shape Definitions ---
-const shapeList = ['Shape1', 'Shape2', 'Shape3', 'Shape4', 'Shape5', 'Shape6', 'Shape7', 'Shape8', 'Shape9', 'Shape10'];
-
-const getShapeStyle = (shape: string): React.CSSProperties => {
-    switch (shape) {
-        // Row 1 from image
-        case 'Shape1': return { clipPath: 'inset(25% 0% round 50px)' }; // Horizontal capsule
-        case 'Shape2': return { borderRadius: '50%' }; // Circle
-        case 'Shape3': return { transform: 'scale(0.9)' }; // Square, slightly smaller
-        case 'Shape4': return { clipPath: 'polygon(50% 10%, 0% 90%, 100% 90%)' }; // Triangle W:H 5:4
-        case 'Shape5': return { clipPath: 'polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)' }; // Pentagon
-        // Row 2 from image
-        case 'Shape6': return { clipPath: 'inset(0% 25% round 50px)' }; // Vertical capsule
-        case 'Shape7': return { clipPath: 'url(#shape7-clip)' }; // Snowman
-        case 'Shape8': return { clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)' }; // Diamond
-        case 'Shape9': return { clipPath: 'polygon(10% 0%, 90% 50%, 10% 100%)' }; // Right pointing triangle W:H 4:5
-        case 'Shape10': return { clipPath: 'url(#shape10-clip)' }; // Flower
-        default: return { borderRadius: '50%' };
-    }
-};
-
-// --- Initial Configurations ---
-const initialBehaviorConfig: Record<string, PlantBehavior | CreatureBehavior> = {
-  'GreenDot': {
-    growth: 15000, range: 30, density: 5, dayActive: true, nightActive: false, lifespan: 120000,
-  },
-  'Fafa': {
-    eatingCooldown: 10000, starvationTime: 60000, reproductionCooldown: 60000, maturationTime: 30000,
-    minOffspring: 1, maxOffspring: 3, speed: 20, dayActive: true, nightActive: false, eats: ['GreenDot'], lifespan: 1800000, specials: []
-  },
-  'Keke': {
-    eatingCooldown: 30000, starvationTime: 90000, reproductionCooldown: 90000, maturationTime: 60000,
-    minOffspring: 1, maxOffspring: 1, speed: 25, dayActive: false, nightActive: true, eats: ['Fafa'], lifespan: 3600000, specials: []
-  }
-};
-
-const initialAppearanceConfig: Record<string, { size: number, color: string, shape: string, type: ElementType }> = {
-    'GreenDot': { size: 10, color: '#879464', shape: 'Shape2', type: ElementType.PLANT },
-    'Fafa': { size: 36, color: 'white', shape: 'Shape2', type: ElementType.CREATURE },
-    'Keke': { size: 50, color: '#6B7280', shape: 'Shape5', type: ElementType.CREATURE },
-};
-
-const predefinedEvents: WorldEvent[] = [
-  {
-    name: 'Nurturing Rain',
-    description: 'Accelerate plant growth by 10s.',
-    duration: 30,
-    effect: 'PLANT_GROWTH_BOOST',
-    visualOverlayColor: 'rgba(173, 216, 230, 0.3)'
-  },
-  {
-    name: 'Ominous Light',
-    description: 'Awaken all creatures.',
-    duration: 45,
-    effect: 'ALL_CREATURES_ACTIVE',
-    visualOverlayColor: 'rgba(57, 255, 20, 0.5)'
-  },
-  {
-    name: 'Drought',
-    description: 'Kills 80% of plants.',
-    duration: 10,
-    effect: 'PLANT_CULL',
-    visualOverlayColor: 'rgba(150, 75, 0, 0.3)'
-  },
-];
-
-const behaviorTooltips: Record<string, string> = {
-    'active': 'The active time of this element',
-    'speed': 'The speed of this creature',
-    'lifespan': 'The time of the existence of this element',
-    'eatingCooldown': 'The time it takes for this creature to be hungry',
-    'starvationTime': 'The time it takes to starve this creature',
-    'reproductionCooldown': 'The time it takes for this creature to mate and reproduce',
-    'offspring': 'The minimum and maximum numbers of offspring per reproduction',
-    'maturationTime': 'The time it takes for this creature to be an adult',
-    'growth': 'The time it takes for this plant to grow another plant',
-    'range': 'The range of growth of this plant',
-    'density': 'The maximum number of the same plant growing within range',
-    'duration': 'How long the special ability effect lasts.',
-    'cooldown': 'Time before the special ability can be used again.',
-};
-
-const keyLabelMap: Record<string, string> = {
-    'speed': 'Speed',
-    'lifespan': 'Lifespan',
-    'eatingCooldown': 'Hunger',
-    'starvationTime': 'Starvation',
-    'reproductionCooldown': 'Reproduction',
-    'maturationTime': 'Maturation',
-    'growth': 'Growth',
-    'range': 'Range',
-    'density': 'Density',
-    'duration': 'Duration',
-    'cooldown': 'Cooldown',
-};
-
-const BehaviorRulesTooltip = ({ elementType }: { elementType: ElementType }) => {
-    const [show, setShow] = useState(false);
-    const [pos, setPos] = useState({ top: 0, left: 0 });
-    const buttonRef = useRef<HTMLButtonElement>(null);
-
-    const handleMouseEnter = () => {
-        if (buttonRef.current) {
-            const rect = buttonRef.current.getBoundingClientRect();
-            setPos({ top: rect.top, left: rect.right + 8 });
-        }
-        setShow(true);
-    };
-
-    const creatureRules = `1 ≤ Speed ≤ 99\n30 ≤ Lifespan ≤ 3600\n5 ≤ Hunger ≤ 180\n30 ≤ Starvation ≤ 180\n5 ≤ Reproduction ≤ 1200\n\n---\n\nHunger < Starvation\nStarvation < Lifespan\nReproduction < Lifespan\nMaturation < Lifespan`;
-    const plantRules = `1 ≤ Lifespan ≤ 3600\n5 ≤ Growth ≤ 360\n10 ≤ Range ≤ 60\n1 ≤ Density ≤ 10`;
-
-    const rulesText = elementType === ElementType.PLANT ? plantRules : creatureRules;
-
-    return (
-        <div className="relative flex items-center">
-            <button
-                ref={buttonRef}
-                onMouseEnter={handleMouseEnter}
-                onMouseLeave={() => setShow(false)}
-                className="w-5 h-5 bg-gray-300 text-white rounded-full flex items-center justify-center text-sm font-light hover:bg-gray-400 transition-colors"
-                aria-label="Show behavior rules"
-            >
-                ?
-            </button>
-            {show && createPortal(
-                <div 
-                    className="p-3 bg-gray-800 text-white text-xs rounded-md shadow-lg w-max whitespace-pre-wrap font-normal"
-                    style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 100 }}
-                >
-                    {rulesText}
-                </div>,
-                document.body
-            )}
-        </div>
-    );
-};
-
-
-// --- New Components ---
-interface LeaderboardModalProps {
-    dayCount: number;
-    onClose: () => void;
-    onTryEcosystem: (dna: string) => void;
-}
-
-const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ dayCount, onClose, onTryEcosystem }) => {
-    const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [userName, setUserName] = useState('');
-    const [hasSubmitted, setHasSubmitted] = useState(false);
-    const [userEntry, setUserEntry] = useState<{name: string, score: number} | null>(null);
-    const nameInputRef = useRef<HTMLInputElement>(null);
-    const [copySuccessId, setCopySuccessId] = useState<string | null>(null);
-
-    useEffect(() => {
-        const fetchLeaderboard = async () => {
-            setIsLoading(true);
-            try {
-                const data = await getLeaderboard();
-                setLeaderboard(data);
-            } catch (error) {
-                console.error("Failed to fetch leaderboard", error);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        fetchLeaderboard();
-    }, []);
-    
-    useEffect(() => {
-        if (!isLoading && !hasSubmitted && nameInputRef.current) {
-            nameInputRef.current.focus();
-        }
-    }, [isLoading, hasSubmitted]);
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!userName.trim()) return;
-        
-        const finalUserName = userName.trim().toUpperCase();
-        const savedConfig = localStorage.getItem('webEcosystemSimulator_lastConfig');
-        if (!savedConfig) {
-            alert("Could not find ecosystem DNA to submit.");
-            return;
-        }
-
-        const ecosystemDNAObject = JSON.parse(savedConfig);
-
-        setIsSubmitting(true);
-        try {
-            await submitScore(finalUserName, dayCount, ecosystemDNAObject);
-            setUserEntry({ name: finalUserName, score: dayCount });
-            setHasSubmitted(true);
-            const newData = await getLeaderboard();
-            setLeaderboard(newData);
-        } catch (error) {
-            console.error("Failed to submit score", error);
-            alert("Failed to submit score. Please try again.");
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-    
-    const handleCopyDNA = (dna: string, id: string) => {
-        navigator.clipboard.writeText(dna).then(() => {
-            setCopySuccessId(id);
-            setTimeout(() => setCopySuccessId(null), 2000);
-        });
-    };
-
-    const isUserInTop10 = useMemo(() => {
-        if (!userEntry) return false;
-        // A simple check; for a real app, you'd use the ID returned from the server
-        return leaderboard.some(e => e.name === userEntry.name && e.score === userEntry.score);
-    }, [leaderboard, userEntry]);
-    
-    const CopyIcon = ({id}: {id: string}) => (
-        copySuccessId === id ?
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> :
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-    );
-
-    return (
-        <div className="fixed inset-0 bg-black/60 flex flex-col justify-center items-center z-50 p-4 font-sans animate-fade-in-down">
-            <h1 className="text-6xl font-extrabold text-red-500 mb-4 tracking-wider" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.3)' }}>
-                EXTINCTION
-            </h1>
-            <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-sm relative">
-                <h2 className="text-3xl font-bold text-gray-800 text-center mb-6">
-                    DAYS SURVIVED: {dayCount}
-                </h2>
-                
-                {isLoading && (
-                    <div className="flex justify-center items-center h-64">
-                        <div className="w-10 h-10 border-4 border-gray-200 border-t-gray-600 rounded-full animate-spin"></div>
-                    </div>
-                )}
-
-                {!isLoading && (
-                     <ul className="space-y-3 text-lg font-medium text-gray-700">
-                        {leaderboard.map((entry, index) => (
-                            <li key={entry.id} className="flex items-center">
-                                <span className="w-8 text-right mr-3 opacity-60">{index + 1}</span>
-                                <span className="flex-grow truncate uppercase tracking-wider">{entry.name}</span>
-                                <span className="font-semibold ml-4">{entry.score}</span>
-                                <button
-                                    onClick={() => onTryEcosystem(entry.ecosystemDNA)}
-                                    className="ml-2 text-gray-400 hover:text-gray-700 transition-colors"
-                                    title={`Try ${entry.name}'s Ecosystem`}
-                                >
-                                    <CopyIcon id={entry.id} />
-                                </button>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-                
-                {hasSubmitted && userEntry && !isUserInTop10 && (
-                    <>
-                        <div className="border-t-2 border-dashed border-gray-300 my-4"></div>
-                        <ul className="text-lg font-medium text-gray-700">
-                            <li className="flex items-center">
-                                <span className="w-8 text-right mr-3 opacity-60">-</span>
-                                <span className="flex-grow truncate uppercase tracking-wider">{userEntry.name}</span>
-                                <span className="font-semibold ml-4">{userEntry.score}</span>
-                                <button
-                                    onClick={() => {
-                                        const savedConfig = localStorage.getItem('webEcosystemSimulator_lastConfig');
-                                        if (savedConfig) handleCopyDNA(savedConfig, 'user-score');
-                                    }}
-                                    className="ml-2 text-gray-400 hover:text-gray-700 transition-colors"
-                                    title="Copy Your Ecosystem DNA"
-                                >
-                                    <CopyIcon id="user-score" />
-                                </button>
-                            </li>
-                        </ul>
-                    </>
-                )}
-
-
-                {!hasSubmitted && !isLoading && (
-                    <form onSubmit={handleSubmit} className="mt-6 flex items-center space-x-2">
-                        <input
-                            ref={nameInputRef}
-                            type="text"
-                            value={userName}
-                            onChange={(e) => setUserName(e.target.value)}
-                            maxLength={10}
-                            placeholder="YOUR NAME"
-                            className="flex-grow px-3 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 transition uppercase tracking-wider text-center"
-                        />
-                        <button type="submit" className="flex-shrink-0 p-2 text-gray-600 hover:text-green-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center w-[44px] h-[44px]" disabled={!userName.trim() || isSubmitting}>
-                           {isSubmitting ? <div className="w-6 h-6 border-4 border-gray-200 border-t-gray-600 rounded-full animate-spin"></div> : <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                        </button>
-                    </form>
-                )}
-            </div>
-            <button onClick={onClose} className="mt-8 bg-white/80 rounded-full p-2 shadow-lg hover:bg-white transition-transform transform hover:scale-110">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-        </div>
-    );
-};
-
-
-const EventNotification: React.FC<{ event: ActiveEvent }> = ({ event }) => {
-  const [timeLeft, setTimeLeft] = useState(Math.ceil(event.duration));
-
-  useEffect(() => {
-    const update = () => {
-      const elapsed = (performance.now() - event.startTime) / 1000;
-      const remaining = Math.ceil(event.duration - elapsed);
-      setTimeLeft(Math.max(0, remaining));
-    };
-
-    update();
-    const intervalId = setInterval(update, 500);
-    return () => clearInterval(intervalId);
-  }, [event.id, event.startTime, event.duration]);
-
-  if (timeLeft <= 0) return null;
-
-  return (
-    <div className="bg-white bg-opacity-90 backdrop-blur-sm p-4 rounded-lg shadow-lg text-center border border-gray-200 mb-2 w-64 animate-fade-in-down">
-      <h3 className="font-bold text-lg text-gray-800">{event.name}</h3>
-      <p className="text-sm text-gray-600">{event.description}</p>
-      <p className="text-xl font-bold text-blue-500 mt-2">{timeLeft}s</p>
-    </div>
-  );
-};
-
-interface CustomCheckboxProps {
-  checked: boolean;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  id: string;
-  children: React.ReactNode;
-}
-
-const CustomCheckbox: React.FC<CustomCheckboxProps> = ({ checked, onChange, id, children }) => (
-    <label htmlFor={id} className="flex items-center cursor-pointer">
-        <input 
-            type="checkbox" 
-            id={id} 
-            checked={checked} 
-            onChange={onChange}
-            className="absolute opacity-0 w-0 h-0"
-        />
-        <span className={`w-5 h-5 border rounded-sm flex items-center justify-center mr-1.5 transition-colors ${checked ? 'bg-blue-500 border-blue-500' : 'bg-white border-gray-400'}`}>
-            {checked && <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-        </span>
-        {children}
-    </label>
-);
-
-const DayNightIndicator = ({ dayCount, isDay }: { dayCount: number, isDay: boolean }) => {
-    const iconSrc = isDay 
-        ? "https://raw.githubusercontent.com/copperbleach/sp8393-nyu.edu/refs/heads/main/Assets/Sun.png"
-        : "https://raw.githubusercontent.com/copperbleach/sp8393-nyu.edu/refs/heads/main/Assets/Moon.png";
-    
-    return (
-        <div className="flex items-center space-x-3 mb-6 flex-shrink-0">
-            <img src={iconSrc} alt={isDay ? "Sun icon" : "Moon icon"} className="w-10 h-10" />
-            <span className="font-bold text-xl text-gray-700">Day {dayCount}</span>
-        </div>
-    );
-};
-
-const RainOverlay = React.memo(() => {
-  const drops = useMemo(() => Array.from({ length: 60 }).map((_, i) => ({
-    left: Math.random() * 100,
-    delay: Math.random() * 2,
-    duration: 0.8 + Math.random() * 0.4
-  })), []);
-
-  return (
-    <div className="fixed inset-0 pointer-events-none z-30 overflow-hidden">
-      {drops.map((drop, i) => (
-        <div
-          key={i}
-          className="absolute bg-blue-300"
-          style={{
-            left: `${drop.left}%`,
-            top: '-50px',
-            width: '2px',
-            height: '50px',
-            opacity: 0.6,
-            animation: `rain-fall ${drop.duration}s linear infinite`,
-            animationDelay: `-${drop.delay}s`
-          }}
-        />
-      ))}
-    </div>
-  );
-});
-
-const TextIOModal = ({ title, initialValue, onSave, onClose, mode }: { title: string, initialValue: string, onSave?: (val: string) => void, onClose: () => void, mode: 'read' | 'write' }) => {
-    const [value, setValue] = useState(initialValue);
-    const [copySuccess, setCopySuccess] = useState(false);
-  
-    const handleCopy = () => {
-      navigator.clipboard.writeText(value).then(() => {
-          setCopySuccess(true);
-          setTimeout(() => setCopySuccess(false), 2000);
-      });
-    };
-  
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[60]" onClick={onClose}>
-        <div className="bg-white p-6 rounded-lg shadow-xl w-[500px] flex flex-col space-y-4" onClick={e => e.stopPropagation()}>
-          <h3 className="font-bold text-lg">{title}</h3>
-          <textarea
-              className="w-full h-64 p-2 border border-gray-300 rounded font-mono text-xs resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={value}
-              onChange={e => mode === 'read' && setValue(e.target.value)}
-              readOnly={mode === 'write'}
-              placeholder={mode === 'read' ? "Paste JSON here..." : ""}
-          />
-          <div className="flex justify-end space-x-2">
-              <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Close</button>
-              {mode === 'write' ? (
-                  <button onClick={handleCopy} className={`px-4 py-2 rounded text-white ${copySuccess ? 'bg-green-500' : 'bg-blue-500 hover:bg-blue-600'}`}>
-                      {copySuccess ? "Copied!" : "Copy to Clipboard"}
-                  </button>
-              ) : (
-                  <button onClick={() => onSave && onSave(value)} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded">
-                      Import
-                  </button>
-              )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-interface ApiKeyModalProps {
-  onSave: (key: string) => void;
-  onClose: () => void;
-}
-  
-const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ onSave, onClose }) => {
-  const [key, setKey] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const handleSave = () => {
-    if (key.trim()) {
-      onSave(key.trim());
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[60]" onClick={onClose}>
-      <div className="bg-white p-6 rounded-lg shadow-xl w-96 flex flex-col space-y-4" onClick={e => e.stopPropagation()}>
-        <h3 className="font-bold text-lg">Add Google Gemini API Key</h3>
-        <p className="text-sm text-gray-600">Your key is stored only in your browser and is required for AI features.</p>
-        <div className="flex items-center space-x-2">
-          <input 
-            ref={inputRef}
-            type="password"
-            className="flex-grow p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Enter your API key..."
-            value={key}
-            onChange={e => setKey(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSave()}
-          />
-          <button 
-            onClick={handleSave} 
-            className="p-2 bg-green-500 text-white rounded hover:bg-green-600 transition-colors flex items-center justify-center aspect-square"
-            title="Accept"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-interface InstanceCounterProps {
-    counts: Record<string, number>;
-    appearanceConfig: Record<string, { size: number; color: string; shape: string; type: ElementType }>;
-}
-
-const InstanceCounter: React.FC<InstanceCounterProps> = ({ counts, appearanceConfig }) => {
-    return (
-        <div className="fixed top-4 right-4 z-40 flex flex-col items-end space-y-1">
-            {Object.keys(appearanceConfig).map((typeName) => {
-                const count = counts[typeName] || 0;
-                const appearance = appearanceConfig[typeName];
-                if (!appearance) return null;
-
-                const shapeStyle = getShapeStyle(appearance.shape);
-                const iconSize = 16;
-
-                return (
-                    <div key={typeName} className="flex items-center justify-end space-x-2">
-                        <span className="font-light text-black text-right min-w-[1.5rem]">{count}</span>
-                        <div 
-                            title={typeName}
-                            className="relative flex justify-center items-center" 
-                            style={{ width: iconSize, height: iconSize }}
-                        >
-                            <div className="absolute w-full h-full" style={{ backgroundColor: appearance.color, ...shapeStyle }} />
-                            {appearance.type === ElementType.CREATURE && (
-                                <div className="absolute w-full h-full flex justify-center items-center">
-                                  <div style={{ 
-                                      display: 'flex', 
-                                      gap: `${Math.max(1, iconSize / 8)}px`, 
-                                      transform: 'translateX(20%)' 
-                                  }}>
-                                      <div className="bg-black rounded-full" style={{ width: `${Math.max(1, iconSize / 5)}px`, height: `${Math.max(1, iconSize / 5)}px` }} />
-                                      <div className="bg-black rounded-full" style={{ width: `${Math.max(1, iconSize / 5)}px`, height: `${Math.max(1, iconSize / 5)}px` }} />
-                                  </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                );
-            })}
-        </div>
-    );
-};
+import LeaderboardModal from './components/LeaderboardModal';
+import EventNotification from './components/EventNotification';
+import CustomCheckbox from './components/CustomCheckbox';
+import DayNightIndicator from './components/DayNightIndicator';
+import RainOverlay from './components/RainOverlay';
+import TextIOModal from './components/TextIOModal';
+import ApiKeyModal from './components/ApiKeyModal';
+import InstanceCounter from './components/InstanceCounter';
+import BehaviorRulesTooltip from './components/BehaviorRulesTooltip';
+import CreationModal from './components/CreationModal';
 
 
 interface MutationConfig {
@@ -893,7 +365,6 @@ const App: React.FC = () => {
               if (!creature.isBaby) {
                 if (isHungry) {
                   let nearestFood: EcosystemElement | null = null; let minDistance = Infinity;
-                  // FIX: Restructured foodFilter to be type-safe by checking elementType before accessing properties.
                   const foodFilter = (other: EcosystemElement) => {
                     if (idsToRemove.has(other.id)) return false;
                     
@@ -902,8 +373,8 @@ const App: React.FC = () => {
                     if (other.elementType === ElementType.PLANT) {
                         return diet.includes(other.plantType);
                     } else if (other.elementType === ElementType.CREATURE) {
-                        if (other.spikeEndTime && now < other.spikeEndTime) return false;
-                        return !other.isDead && diet.includes(other.creatureType);
+                        if ((other as Creature).spikeEndTime && now < (other as Creature).spikeEndTime) return false;
+                        return !(other as Creature).isDead && diet.includes(other.creatureType);
                     }
                     return false;
                   };
@@ -1306,7 +777,7 @@ const App: React.FC = () => {
       });
   };
 
-    const handleBehaviorSpecialChange = (typeName: string, specialType: SpecialType, key: 'enabled' | 'duration' | 'cooldown', value: boolean | string) => {
+    const handleBehaviorSpecialChange = (typeName: string, specialType: string, key: 'enabled' | 'duration' | 'cooldown', value: boolean | string) => {
         setBehaviorConfig(prev => {
             const newConfig = { ...prev };
             const behavior = { ...newConfig[typeName] } as CreatureBehavior;
@@ -1316,7 +787,6 @@ const App: React.FC = () => {
             let specialIndex = specials.findIndex(s => s.type === specialType);
 
             if (specialIndex === -1) {
-                // Should not happen with the new specials list, but as a fallback
                 return prev;
             }
             
@@ -1494,48 +964,17 @@ const App: React.FC = () => {
     setIsGeneratingEcosystem(true);
     try {
       const ai = new GoogleGenAI({ apiKey });
-      const specialsListString = DEFAULT_SPECIAL_ABILITIES.map(s => `- ${s.name} (${s.type}): ${s.description}`).join('\n');
       const prompt = `You are an AI assistant for a web-based ecosystem simulator. Your task is to invent a complete, balanced ecosystem with exactly 6 unique elements (a mix of plants and creatures).
 
-The ecosystem should form a stable food web. For example, include producers (plants), primary consumers (herbivores), and secondary/tertiary consumers (carnivores/omnivores). The available shapes are 'Shape1', 'Shape2', 'Shape3', 'Shape4', 'Shape5', 'Shape6', 'Shape7', 'Shape8', 'Shape9', and 'Shape10'. Please assign a varied selection of these shapes to the 6 elements.
+The ecosystem should form a stable food web. The available shapes are 'Shape1' through 'Shape10'. Please assign a varied selection of these shapes.
 
-Additionally, you can assign special abilities to creatures. Here is the list of available specials:
-${specialsListString}
+You can assign special abilities to a maximum of two creatures, with each having only one special. For a creature with a special, add a "specials" property to its "behavior" object as an array with a single special ability object. The "enabled" property for the special should be set to true.
 
-Rules for specials:
-- A maximum of two creatures in the ecosystem can have a special ability.
-- Each of those creatures can have only one special.
-- Plants cannot have specials.
-- For a creature with a special, add a "specials" property to its "behavior" object. This should be an array containing a single special ability object, copied exactly from the list provided. The "enabled" property for the special should be set to true.
+Ensure all configuration values are within reasonable bounds (e.g., starvationTime > eatingCooldown).
 
-Ensure all configuration values are within reasonable bounds and compatible with the simulator's logic (e.g., starvationTime > eatingCooldown, lifespan > maturationTime).
+Return your response as a single JSON object with one root key: "ecosystem". The value should be an array of exactly 6 element objects. Do not include any other text or markdown.
 
-Return your response as a single JSON object containing one root key: "ecosystem". The value of "ecosystem" should be an array of exactly 6 element objects. Do not include any other text or markdown.
-
-Here is an example structure for the response, including a creature with a special:
-\`\`\`json
-{
-  "ecosystem": [
-    {
-      "name": "SunPetal",
-      "appearance": { "size": 15, "color": "#F9D423", "shape": "Shape10", "type": "0" },
-      "behavior": { "growth": 12000, "range": 35, "density": 4, "dayActive": true, "nightActive": false, "lifespan": 150000 },
-      "initialCount": 25
-    },
-    {
-      "name": "Glimmerwing",
-      "appearance": { "size": 30, "color": "#A0D2EB", "shape": "Shape2", "type": "1" },
-      "behavior": { 
-        "eatingCooldown": 12000, "starvationTime": 60000, "reproductionCooldown": 50000, "maturationTime": 25000, "minOffspring": 1, "maxOffspring": 3, 
-        "speed": 22, "dayActive": true, "nightActive": false, "eats": ["SunPetal"], "lifespan": 240000,
-        "specials": [{ "type": "TELEPORTATION", "name": "Teleportation", "description": "Instantly teleports to a random location.", "enabled": true, "duration": 500, "cooldown": 25000 }]
-      },
-      "initialCount": 6
-    }
-  ]
-}
-\`\`\`
-Remember for the 'type' property: "0" is for PLANT and "1" is for CREATURE (it must be a string). Generate exactly 6 total elements. For a plant's behavior, only include 'growth', 'range', 'density', 'dayActive', 'nightActive', and 'lifespan'. For a creature's behavior, only include 'eatingCooldown', 'starvationTime', 'reproductionCooldown', 'maturationTime', 'minOffspring', 'maxOffspring', 'speed', 'dayActive', 'nightActive', 'eats', 'lifespan', and 'specials'.`;
+For the 'type' property: "0" is for PLANT and "1" is for CREATURE (it must be a string).`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -1554,53 +993,36 @@ Remember for the 'type' property: "0" is for PLANT and "1" is for CREATURE (it m
                     name: { type: Type.STRING, description: "Unique name for the element." },
                     appearance: {
                       type: Type.OBJECT,
-                      description: "Visual properties of the element.",
                       properties: {
-                        size: { type: Type.INTEGER, description: "Size of the element in pixels." },
-                        color: { type: Type.STRING, description: "Hex color code for the element." },
-                        shape: { type: Type.STRING, description: "Shape identifier for the element.", enum: ['Shape1', 'Shape2', 'Shape3', 'Shape4', 'Shape5', 'Shape6', 'Shape7', 'Shape8', 'Shape9', 'Shape10'] },
-                        type: { type: Type.STRING, enum: ['0', '1'], description: "Type of the element: '0' for Plant, '1' for Creature." },
+                        size: { type: Type.INTEGER },
+                        color: { type: Type.STRING },
+                        shape: { type: Type.STRING, enum: ['Shape1', 'Shape2', 'Shape3', 'Shape4', 'Shape5', 'Shape6', 'Shape7', 'Shape8', 'Shape9', 'Shape10'] },
+                        type: { type: Type.STRING, enum: ['0', '1'] },
                       },
                       required: ['size', 'color', 'shape', 'type']
                     },
                     behavior: {
                       type: Type.OBJECT,
-                      description: 'Defines the behavior. Only include properties relevant to the element type.',
                       properties: {
-                        growth: { type: Type.INTEGER, description: 'Time in ms for a plant to grow a new one. (Plant only)' },
-                        range: { type: Type.INTEGER, description: 'Range in pixels for new plant growth. (Plant only)' },
-                        density: { type: Type.INTEGER, description: 'Max number of same plants in range. (Plant only)' },
-                        eatingCooldown: { type: Type.INTEGER, description: 'Time in ms until a creature gets hungry. (Creature only)' },
-                        starvationTime: { type: Type.INTEGER, description: 'Time in ms until a creature starves. Must be > eatingCooldown. (Creature only)' },
-                        reproductionCooldown: { type: Type.INTEGER, description: 'Time in ms until a creature can reproduce again. (Creature only)' },
-                        maturationTime: { type: Type.INTEGER, description: 'Time in ms for a baby creature to become an adult. (Creature only)' },
-                        minOffspring: { type: Type.INTEGER, description: 'Minimum number of offspring per reproduction. (Creature only)' },
-                        maxOffspring: { type: Type.INTEGER, description: 'Maximum number of offspring per reproduction. (Creature only)' },
-                        speed: { type: Type.INTEGER, description: 'Movement speed of the creature. (Creature only)' },
-                        eats: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Array of element names this creature eats. (Creature only)' },
-                        dayActive: { type: Type.BOOLEAN, description: 'Is the element active during the day?' },
-                        nightActive: { type: Type.BOOLEAN, description: 'Is the element active during the night?' },
-                        lifespan: { type: Type.INTEGER, description: 'Total lifespan of the element in ms.' },
-                        specials: {
-                            type: Type.ARRAY,
-                            description: 'An array containing at most one special ability for this creature. (Creature only, optional)',
-                            items: {
-                              type: Type.OBJECT,
-                              properties: {
-                                type: { type: Type.STRING, description: 'The type of the special ability.' },
-                                name: { type: Type.STRING, description: 'The name of the special ability.' },
-                                description: { type: Type.STRING, description: 'A description of the special ability.' },
-                                enabled: { type: Type.BOOLEAN, description: 'Whether the special is enabled. Should be true if assigned.' },
-                                duration: { type: Type.INTEGER, description: 'The duration of the special ability in milliseconds.' },
-                                cooldown: { type: Type.INTEGER, description: 'The cooldown of the special ability in milliseconds.' }
-                              },
-                              required: ['type', 'name', 'description', 'enabled', 'duration', 'cooldown']
-                            }
-                        }
+                        growth: { type: Type.INTEGER },
+                        range: { type: Type.INTEGER },
+                        density: { type: Type.INTEGER },
+                        eatingCooldown: { type: Type.INTEGER },
+                        starvationTime: { type: Type.INTEGER },
+                        reproductionCooldown: { type: Type.INTEGER },
+                        maturationTime: { type: Type.INTEGER },
+                        minOffspring: { type: Type.INTEGER },
+                        maxOffspring: { type: Type.INTEGER },
+                        speed: { type: Type.INTEGER },
+                        eats: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        dayActive: { type: Type.BOOLEAN },
+                        nightActive: { type: Type.BOOLEAN },
+                        lifespan: { type: Type.INTEGER },
+                        specials: { type: Type.ARRAY, items: { type: Type.OBJECT } }
                       },
                       required: ['dayActive', 'nightActive', 'lifespan']
                     },
-                    initialCount: { type: Type.INTEGER, description: "Initial number of this element to spawn." }
+                    initialCount: { type: Type.INTEGER }
                   },
                   required: ['name', 'appearance', 'behavior', 'initialCount']
                 }
@@ -1621,7 +1043,7 @@ Remember for the 'type' property: "0" is for PLANT and "1" is for CREATURE (it m
         newEcosystemData = JSON.parse(responseText);
       } catch (e) {
         console.error("Failed to parse JSON response from AI. Raw response:", responseText);
-        throw new Error(`Failed to parse JSON from AI. The response might be an error message. See console for raw response. Original error: ${e}`);
+        throw new Error(`Failed to parse JSON from AI. See console. Original error: ${e}`);
       }
 
       const ecosystemArray = newEcosystemData.ecosystem;
@@ -1633,7 +1055,6 @@ Remember for the 'type' property: "0" is for PLANT and "1" is for CREATURE (it m
           for (const element of ecosystemArray) {
               const { name, appearance, behavior, initialCount } = element;
               
-              // FIX: Create a new object for appearance config to avoid mutation side-effects.
               const newAppearance = {
                 ...appearance,
                 type: parseInt(appearance.type, 10),
@@ -1729,7 +1150,7 @@ Remember for the 'type' property: "0" is for PLANT and "1" is for CREATURE (it m
       );
     }
     
-    const renderSpecial = (special: SpecialAbility) => {
+    const renderSpecial = (special: any) => { // Using any because it might not be a full SpecialAbility yet if coming from older config
         if (!creatureBehavior) return null;
         const isEnabled = special?.enabled ?? false;
 
@@ -2144,354 +1565,5 @@ Remember for the 'type' property: "0" is for PLANT and "1" is for CREATURE (it m
     </div>
   );
 };
-
-const CreationModal = ({ allElementTypes, onSave, onCancel, getConstrainedValue, getApiKey }: { allElementTypes: string[], onSave: (data: any) => void, onCancel: () => void, getConstrainedValue: (key: string, value: number, behavior: CreatureBehavior | PlantBehavior | Omit<CreatureBehavior, 'eats'>) => number, getApiKey: () => string | null }) => {
-    const [name, setName] = useState('');
-    const [size, setSize] = useState(30);
-    const [color, setColor] = useState('#aabbcc');
-    const [shape, setShape] = useState('Shape2');
-    const [type, setType] = useState<ElementType>(ElementType.CREATURE);
-    const [isNameEditing, setIsNameEditing] = useState(false);
-    const nameInputRef = useRef<HTMLInputElement>(null);
-    const [showPasteInput, setShowPasteInput] = useState(false);
-    const [pasteInputValue, setPasteInputValue] = useState("");
-    const [plantBehavior, setPlantBehavior] = useState<PlantBehavior>({ growth: 10000, range: 40, density: 5, dayActive: true, nightActive: false, lifespan: 120000 });
-    const [creatureBehavior, setCreatureBehavior] = useState<Omit<CreatureBehavior, 'eats' | 'specials'>>({ eatingCooldown: 15000, starvationTime: 75000, reproductionCooldown: 80000, maturationTime: 45000, minOffspring: 1, maxOffspring: 2, speed: 18, dayActive: true, nightActive: false, lifespan: 600000 });
-    const [eats, setEats] = useState<string[]>([]);
-    const [specials, setSpecials] = useState<SpecialAbility[]>(() =>
-        DEFAULT_SPECIAL_ABILITIES.map(s => ({ ...s, enabled: false }))
-    );
-    const [isGeneratingSpecial, setIsGeneratingSpecial] = useState(false);
-    
-    useEffect(() => {
-        const randomNames = ['Baba', 'Poupou', 'Mumu', 'Lo', 'Pipi', 'Zuzu', 'Koko', 'Dodo', 'Nini', 'Riri', 'Bop', 'Yaya', 'Mimi', 'Ma'];
-        const sizes = [10, 20, 30, 40, 50];
-        setName(randomNames[Math.floor(Math.random() * randomNames.length)]);
-        setSize(sizes[Math.floor(Math.random() * sizes.length)]);
-        setColor('#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0'));
-        setShape(shapeList[Math.floor(Math.random() * shapeList.length)]);
-    }, []);
-
-    useEffect(() => { if (isNameEditing) { nameInputRef.current?.focus(); nameInputRef.current?.select(); } }, [isNameEditing]);
-
-    const handleGenerateAISpecial = useCallback(async () => {
-        const apiKey = getApiKey();
-        if (!apiKey) return;
-
-        setIsGeneratingSpecial(true);
-        try {
-            const ai = new GoogleGenAI({ apiKey });
-            const existingSpecialsString = specials.map(s => `- ${s.name}: ${s.description}`).join('\n');
-
-            const prompt = `You are an AI assistant for a web-based ecosystem simulator. Your task is to invent a new, unique special ability for a creature.
-    
-            Here are the existing special abilities. Do not create one that is too similar to these:
-            ${existingSpecialsString}
-    
-            Now, create a new, unique special ability. Follow these rules:
-            1. It must have a creative 'name' (2-3 words).
-            2. It must have a brief 'description' of its gameplay function.
-            3. Its 'duration' must be a number in seconds (e.g., between 3 and 60).
-            4. Its 'cooldown' must be a number in seconds (e.g., between 5 and 120).
-            5. The ability should be balanced and not overly powerful.
-    
-            Return your response as a single JSON object. Do not include any other text or markdown.`;
-
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-                config: {
-                    responseMimeType: 'application/json',
-                    responseSchema: {
-                        type: Type.OBJECT,
-                        properties: {
-                            name: { type: Type.STRING },
-                            description: { type: Type.STRING },
-                            duration: { type: Type.INTEGER },
-                            cooldown: { type: Type.INTEGER },
-                        },
-                        required: ['name', 'description', 'duration', 'cooldown'],
-                    },
-                },
-            });
-
-            const responseText = response.text;
-            if (!responseText) throw new Error("AI response was empty.");
-            
-            const specialJson = JSON.parse(responseText);
-            const newSpecial: SpecialAbility = {
-                type: specialJson.name.toUpperCase().replace(/\s+/g, '_'),
-                name: specialJson.name,
-                description: specialJson.description,
-                enabled: false,
-                duration: specialJson.duration * 1000,
-                cooldown: specialJson.cooldown * 1000,
-            };
-
-            if (specials.some(s => s.type === newSpecial.type)) {
-                newSpecial.type = `${newSpecial.type}_${Date.now()}`;
-            }
-
-            setSpecials(prev => [...prev, newSpecial]);
-
-        } catch (error) {
-            console.error("Error generating AI special:", error);
-            alert("Failed to generate an AI special. Please check the console.");
-        } finally {
-            setIsGeneratingSpecial(false);
-        }
-    }, [getApiKey, specials]);
-
-    const handleSave = () => {
-        if (!name.trim()) { alert("Please enter a name."); return; }
-        const behavior = type === ElementType.PLANT ? plantBehavior : { ...creatureBehavior, eats, specials };
-        onSave({ name, appearance: { size, color, shape }, type, behavior });
-    };
-
-    const handleBehaviorChange = (behaviorType: 'plant' | 'creature', key: string, value: string | boolean) => {
-        const setter = behaviorType === 'plant' ? setPlantBehavior : setCreatureBehavior;
-        const currentBehavior = behaviorType === 'plant' ? plantBehavior : creatureBehavior;
-
-        setter(prev => {
-            const newBehavior = { ...prev };
-            if (typeof value === 'boolean') { (newBehavior as any)[key] = value; }
-            else {
-                if (key === 'minOffspring' || key === 'maxOffspring') {
-                    let numValue = parseInt(value, 10);
-                    if (isNaN(numValue)) return prev;
-                    if (key === 'minOffspring') numValue = Math.max(0, Math.min(numValue, (prev as any).maxOffspring));
-                    else numValue = Math.max((prev as any).minOffspring, Math.min(numValue, 9));
-                    (newBehavior as any)[key] = numValue;
-                } else {
-                    let numValue = parseFloat(value);
-                    if (isNaN(numValue)) return prev;
-                    numValue = getConstrainedValue(key, numValue, currentBehavior);
-                    const isTimeValue = key.toLowerCase().includes('time') || key.toLowerCase().includes('cooldown') || key.toLowerCase().includes('lifespan') || key === 'growth';
-                    (newBehavior as any)[key] = isTimeValue ? Math.round(numValue * 1000) : numValue;
-                }
-            }
-            return newBehavior as any;
-        });
-    }
-    
-    const handleEatsChange = (eatenType: string) => { setEats(prev => prev.includes(eatenType) ? prev.filter(t => t !== eatenType) : [...prev, eatenType]); }
-
-    const handleSpecialChange = (specialType: SpecialType, key: 'enabled' | 'duration' | 'cooldown', value: boolean | string) => {
-        setSpecials(prev => {
-            const newSpecials = [...prev];
-            const index = newSpecials.findIndex(s => s.type === specialType);
-            if (index === -1) return prev;
-
-            const updatedSpecial = { ...newSpecials[index] };
-            if (key === 'enabled' && typeof value === 'boolean') {
-                updatedSpecial.enabled = value;
-            } else if ((key === 'duration' || key === 'cooldown') && typeof value === 'string') {
-                const num = parseFloat(value);
-                if (!isNaN(num)) {
-                    updatedSpecial[key] = Math.round(num * 1000);
-                }
-            }
-            newSpecials[index] = updatedSpecial;
-            return newSpecials;
-        });
-    };
-
-    const processPasteData = (json: string) => {
-        try {
-            const data = JSON.parse(json);
-            if (!data.appearance || !data.behavior || !data.name) { alert("Invalid configuration format."); return; }
-            const { name, appearance, behavior } = data;
-            const { size, color, shape, type } = appearance;
-            setName(name); setSize(size); setColor(color); setShape(shape); setType(type);
-            if (type === ElementType.PLANT) { setPlantBehavior(behavior); }
-            else if (type === ElementType.CREATURE) { const { eats, specials: pastedSpecials, ...rest } = behavior; setCreatureBehavior(rest); setEats(eats || []); if (pastedSpecials) setSpecials(pastedSpecials); }
-            setShowPasteInput(false);
-        } catch (error) { alert("Failed to parse copied data."); console.error("Paste error:", error); }
-    };
-
-    const handlePaste = async () => {
-        try { const text = await navigator.clipboard.readText(); if (text) { processPasteData(text); return; } }
-        catch (e) { /* ignore */ }
-        setShowPasteInput(true);
-    };
-
-    const renderNumericField = (behaviorType: 'plant' | 'creature', key: string, value: number, unit?: string, handler?: (k: string, v: string) => void) => {
-      const isTimeValue = key.toLowerCase().includes('time') || key.toLowerCase().includes('cooldown') || key.toLowerCase().includes('lifespan') || key === 'growth' || key.toLowerCase().includes('duration');
-      const displayValue = isTimeValue ? value / 1000 : value;
-      const step = key.toLowerCase().includes('lifespan') ? 50 : (isTimeValue ? 0.5 : 1);
-      
-      return (
-        <div className="flex justify-between items-center" title={behaviorTooltips[key]}>
-          <label htmlFor={`create-${key}`} className="text-gray-800 capitalize">{keyLabelMap[key] || key.replace(/_/g, ' ')}:</label>
-          <div className="flex items-center justify-end" style={{ width: '130px' }}>
-            <input type="number" id={`create-${key}`} value={displayValue} step={step} onChange={(e) => handler ? handler(key, e.target.value) : handleBehaviorChange(behaviorType, key, e.target.value)} className="w-20 bg-gray-100 text-gray-800 text-right rounded focus:outline-none focus:ring-2 focus:ring-blue-400 px-2 py-0.5"/>
-            <span className="ml-2 w-6 text-left text-gray-500">{unit}</span>
-          </div>
-        </div>
-      );
-    }
-    
-    const renderSpecialCreator = (special: SpecialAbility) => (
-        <div className="p-2 border-t border-gray-200" key={special.type}>
-            <CustomCheckbox
-                id={`create-${special.type}-enabled`}
-                checked={special.enabled}
-                onChange={e => handleSpecialChange(special.type, 'enabled', e.target.checked)}
-            >
-                <span className="font-medium">{special.name}</span>
-            </CustomCheckbox>
-            {special.enabled && (
-                <div className="pl-6 pt-2 space-y-2">
-                    <p className="text-xs text-gray-500 italic" title={special.description}>{special.description}</p>
-                    {renderNumericField('creature', 'duration', special.duration, 's', (k, v) => handleSpecialChange(special.type, 'duration', v))}
-                    {renderNumericField('creature', 'cooldown', special.cooldown, 's', (k, v) => handleSpecialChange(special.type, 'cooldown', v))}
-                </div>
-            )}
-        </div>
-    );
-
-    return (
-        <div className="absolute inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50" onClick={onCancel}>
-            <div className="bg-white p-8 rounded-lg shadow-2xl w-[600px] max-h-[90vh] overflow-y-auto relative" onClick={e => e.stopPropagation()}>
-                <button onClick={handlePaste} className="absolute top-4 right-4 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-md transition-colors flex items-center space-x-2 text-sm font-medium" title="Import DNA">
-                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                    <span>Import DNA</span>
-                </button>
-
-                {showPasteInput && (
-                    <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-md">
-                        <label className="block text-sm font-bold mb-2 text-gray-700">Paste DNA Code:</label>
-                        <textarea className="w-full h-24 p-2 border border-gray-300 rounded mb-2 font-mono text-xs focus:ring-2 focus:ring-blue-400 outline-none" placeholder='{"name": "...", "appearance": {...}, ...}' value={pasteInputValue} onChange={e => setPasteInputValue(e.target.value)} />
-                        <div className="flex justify-end space-x-2">
-                            <button onClick={() => setShowPasteInput(false)} className="px-3 py-1 text-gray-500 hover:text-gray-700 text-sm">Cancel</button>
-                            <button onClick={() => processPasteData(pasteInputValue)} className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">Load</button>
-                        </div>
-                    </div>
-                )}
-                
-                <div className="mb-4 flex flex-col items-center space-y-4 pt-8">
-                    <input ref={nameInputRef} type="text" value={name} onChange={e => setName(e.target.value)} onDoubleClick={() => setIsNameEditing(true)} onBlur={() => setIsNameEditing(false)} onKeyDown={(e) => { if (e.key === 'Enter') nameInputRef.current?.blur(); }} readOnly={!isNameEditing} className={`bg-transparent text-2xl font-bold text-center w-4/5 pb-1 border-b border-gray-400 focus:outline-none focus:ring-0 focus:border-blue-500 transition-colors ${isNameEditing ? 'cursor-text' : 'cursor-default'}`} title="Double-click to edit name"/>
-                    <div className="w-24 h-24 relative flex justify-center items-center">
-                        <div className="relative" style={{ width: `${size}px`, height: `${size}px` }}>
-                           <div className="absolute w-full h-full" style={{ backgroundColor: color, ...getShapeStyle(shape) }}/>
-                            {type === ElementType.CREATURE && (
-                                <div className="absolute w-full h-full flex justify-center items-center">
-                                    <div style={{ transform: 'translateX(20%)', display: 'flex', gap: `${size / 8}px`, alignItems: 'center' }}>
-                                        <div className="bg-black rounded-full" style={{ width: `${size / 5}px`, height: `${size / 5}px` }} />
-                                        <div className="bg-black rounded-full" style={{ width: `${size / 5}px`, height: `${size / 5}px` }} />
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                     <div className="flex items-center space-x-6">
-                        <label className="flex items-center cursor-pointer"> <input type="radio" name="elementType" value={ElementType.CREATURE} checked={type === ElementType.CREATURE} onChange={e => setType(parseInt(e.target.value, 10))} className="form-radio mr-2" /> Creature </label>
-                        <label className="flex items-center cursor-pointer"> <input type="radio" name="elementType" value={ElementType.PLANT} checked={type === ElementType.PLANT} onChange={e => setType(parseInt(e.target.value, 10))} className="form-radio mr-2" /> Plant </label>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-x-8 gap-y-4">
-                    <div className="space-y-4">
-                        <h3 className="font-bold border-b pb-2">Appearance</h3>
-                        <div><label className="block">Size</label><select value={size} onChange={e => setSize(parseInt(e.target.value, 10))} className="w-full p-2 border rounded bg-white"><option value="10">10px</option><option value="20">20px</option><option value="30">30px</option><option value="40">40px</option><option value="50">50px</option></select></div>
-                        <div><label className="block">Color</label><input type="color" value={color} onChange={e => setColor(e.target.value)} className="w-full h-10 p-1 border rounded"/></div>
-                        <div>
-                            <label className="block">Shape</label>
-                            <div className="grid grid-cols-5 gap-2 mt-2">
-                                {shapeList.map(shapeName => (
-                                    <div key={shapeName} onClick={() => setShape(shapeName)} className={`w-12 h-12 cursor-pointer flex items-center justify-center ${shape === shapeName ? 'ring-2 ring-blue-500' : 'ring-1 ring-gray-300'} rounded`}>
-                                        <div className="w-8 h-8 bg-gray-400" style={getShapeStyle(shapeName)}/>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="space-y-2 text-sm">
-                       <h3 className="font-bold border-b pb-2 mb-2 flex justify-between items-center">
-                          <span>Behavior</span>
-                          <BehaviorRulesTooltip elementType={type} />
-                       </h3>
-                       {type === ElementType.PLANT && (
-                        <div className="space-y-2">
-                           <div className="flex justify-between items-center" title={behaviorTooltips['active']}>
-                              <label>Active:</label>
-                              <div className="flex items-center justify-end" style={{ width: '130px' }}>
-                                  <div className="flex items-center space-x-2">
-                                     <CustomCheckbox id="create-plant-dayActive" checked={plantBehavior.dayActive} onChange={e => handleBehaviorChange('plant', 'dayActive', e.target.checked)}> <span className="text-lg">☀</span> </CustomCheckbox>
-                                     <CustomCheckbox id="create-plant-nightActive" checked={plantBehavior.nightActive} onChange={e => handleBehaviorChange('plant', 'nightActive', e.target.checked)}> <span className="text-lg">☾</span> </CustomCheckbox>
-                                  </div> <span className="ml-2 w-6" />
-                              </div>
-                           </div>
-                           {renderNumericField('plant', 'lifespan', plantBehavior.lifespan, 's')}
-                           {renderNumericField('plant', 'growth', plantBehavior.growth, 's')}
-                           {renderNumericField('plant', 'range', plantBehavior.range)}
-                           {renderNumericField('plant', 'density', plantBehavior.density)}
-                        </div>
-                       )}
-                       {type === ElementType.CREATURE && (
-                        <div className="space-y-2">
-                           <div className="flex justify-between items-center" title={behaviorTooltips['active']}>
-                              <label>Active:</label>
-                              <div className="flex items-center justify-end" style={{ width: '130px' }}>
-                                  <div className="flex items-center space-x-2">
-                                    <CustomCheckbox id="create-creature-dayActive" checked={creatureBehavior.dayActive} onChange={e => handleBehaviorChange('creature', 'dayActive', e.target.checked)}> <span className="text-lg">☀</span> </CustomCheckbox>
-                                    <CustomCheckbox id="create-creature-nightActive" checked={creatureBehavior.nightActive} onChange={e => handleBehaviorChange('creature', 'nightActive', e.target.checked)}> <span className="text-lg">☾</span> </CustomCheckbox>
-                                  </div> <span className="ml-2 w-6" />
-                              </div>
-                           </div>
-                           {renderNumericField('creature', 'speed', creatureBehavior.speed)}
-                           {renderNumericField('creature', 'lifespan', creatureBehavior.lifespan, 's')}
-                           {renderNumericField('creature', 'eatingCooldown', creatureBehavior.eatingCooldown, 's')}
-                           {renderNumericField('creature', 'starvationTime', creatureBehavior.starvationTime, 's')}
-                           {renderNumericField('creature', 'reproductionCooldown', creatureBehavior.reproductionCooldown, 's')}
-                           <div className="flex justify-between items-center" title={behaviorTooltips['offspring']}>
-                               <label className="text-gray-800">Offspring:</label>
-                               <div className="flex items-center justify-end" style={{ width: '130px' }}>
-                                   <div className="flex items-center bg-gray-100 rounded focus-within:ring-2 focus-within:ring-blue-400 w-20 justify-center py-0.5">
-                                       <input type="number" value={creatureBehavior.minOffspring} onChange={e => handleBehaviorChange('creature', 'minOffspring', e.target.value)} className="w-8 bg-transparent text-gray-800 text-right focus:outline-none" />
-                                       <span className="text-gray-500 mx-px">~</span>
-                                       <input type="number" value={creatureBehavior.maxOffspring} onChange={e => handleBehaviorChange('creature', 'maxOffspring', e.target.value)} className="w-8 bg-transparent text-gray-800 text-left focus:outline-none" />
-                                   </div> <span className="ml-2 w-6 text-left text-gray-500"></span>
-                               </div>
-                           </div>
-                           {renderNumericField('creature', 'maturationTime', creatureBehavior.maturationTime, 's')}
-                           
-                           <h3 className="font-bold border-b pb-2 pt-4">Diet</h3>
-                           <div className="grid grid-cols-2 gap-2">
-                              {allElementTypes.map(typeName => (
-                                   <div key={typeName}><label className="flex items-center"><input type="checkbox" checked={eats.includes(typeName)} onChange={() => handleEatsChange(typeName)} className="mr-2"/>{typeName}</label></div>
-                              ))}
-                           </div>
-                           
-                            <h3 className="font-bold border-b pb-2 pt-4">Specials</h3>
-                            {specials.map(special => renderSpecialCreator(special))}
-                            <div className="pt-2">
-                                <button onClick={handleGenerateAISpecial} disabled={isGeneratingSpecial} className="w-full p-2 bg-purple-50 hover:bg-purple-100 rounded flex items-center justify-center space-x-2 transition-colors border border-purple-200 text-purple-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                                    {isGeneratingSpecial ? (
-                                        <div className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
-                                    ) : (
-                                        <>
-                                            <img src="https://raw.githubusercontent.com/copperbleach/sp8393-nyu.edu/refs/heads/main/Assets/Robot.png" alt="AI Generate" className="h-5 w-5" />
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-                       )}
-                    </div>
-                </div>
-
-                <div className="flex justify-center mt-8">
-                    <button onClick={handleSave} className="w-16 h-16 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center transition-transform transform hover:scale-110">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
 
 export default App;

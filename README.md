@@ -10,11 +10,27 @@ View your app in AI Studio: https://ai.studio/apps/drive/1bmwmd1nuOEbDOPT4SSsqdg
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
+**Prerequisites:**
+- Node.js
+- Vercel CLI
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+1.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
+2.  **Install the Vercel CLI globally:**
+    ```bash
+    npm install -g vercel
+    ```
+3.  **Create Environment File:** Create a new file named `.env.local` in the root of your project.
+4.  **Add Environment Variables:** Add your API keys and Supabase credentials to the `.env.local` file. It should look like this:
+    ```
+    GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
+    SUPABASE_URL="YOUR_SUPABASE_URL"
+    SUPABASE_SERVICE_ROLE_KEY="YOUR_SUPABASE_SERVICE_ROLE_KEY"
+    ```
+5.  **Run the app:**
+    ```bash
+    npm run dev
+    ```
+This will start a local development server that serves both your frontend application and your API routes.

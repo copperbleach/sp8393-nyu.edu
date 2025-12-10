@@ -1,4 +1,3 @@
-
 export enum ElementType {
   PLANT,
   CREATURE,
@@ -120,4 +119,13 @@ export interface ActiveEffect {
     endX?: number; 
     endY?: number;
     creatureId?: string;
+}
+
+// --- Leaderboard ---
+export interface LeaderboardEntry {
+  id: string;
+  username: string;
+  score: number;
+  ecosystemDNA: object;
+  created_at: string;
 }

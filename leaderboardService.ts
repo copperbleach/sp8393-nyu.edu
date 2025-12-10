@@ -1,7 +1,7 @@
 import { LeaderboardEntry } from './types';
 
-const GET_LEADERBOARD_URL = 'https://ecosystemsimulator.vercel.app/api/getLeaderboard';
-const SUBMIT_SCORE_URL = 'https://ecosystemsimulator.vercel.app/api/submitScore';
+const GET_LEADERBOARD_URL = '/api/getLeaderboard';
+const SUBMIT_SCORE_URL = '/api/submitScore';
 
 /**
  * Fetches the top 10 leaderboard scores from the backend.
@@ -24,7 +24,8 @@ export const getLeaderboard = async (): Promise<LeaderboardEntry[]> => {
 /**
  * Submits a new score to the backend.
  */
-export const submitScore = async (name: string, score: number, ecosystemDNA: string): Promise<{ success: true }> => {
+export const submitScore = async (name: string, score: number, ecosystemDNA: object): Promise<{ success: true }> => {
+    console.log("ecosystemDNA type:", typeof ecosystemDNA);
     try {
         const response = await fetch(SUBMIT_SCORE_URL, {
             method: 'POST',
