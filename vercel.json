@@ -1,7 +1,10 @@
 {
+  "version": 3,
   "functions": {
     "api/*.ts": {
-      "runtime": "nodejs18.x"
+      "runtime": "nodejs18.x",
+      "memory": 128,
+      "maxDuration": 10
     }
   }
 }
