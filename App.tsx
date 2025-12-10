@@ -34,6 +34,15 @@ interface MutationConfig {
   cyclopsChance: number;  // in percent, e.g., 0.01 for 0.01%
 }
 
+const soundUrls = {
+    babyBorn: 'https://cdn.jsdelivr.net/gh/copperbleach/sp8393-nyu.edu@main/Assets/Bob.wav',
+    extinction: 'https://cdn.jsdelivr.net/gh/copperbleach/sp8393-nyu.edu@main/Assets/Bell.mp3',
+    death: 'https://cdn.jsdelivr.net/gh/copperbleach/sp8393-nyu.edu@main/Assets/Fart.mp3',
+    toxicGas: 'https://cdn.jsdelivr.net/gh/copperbleach/sp8393-nyu.edu@main/Assets/Spray.wav',
+    teleport: 'https://cdn.jsdelivr.net/gh/copperbleach/sp8393-nyu.edu@main/Assets/Teleport.mp3',
+    munch: 'https://cdn.jsdelivr.net/gh/copperbleach/sp8393-nyu.edu@main/Assets/Munch.wav',
+};
+
 const App: React.FC = () => {
   const [elements, setElements] = useState<EcosystemElement[]>([]);
   const [selectedInfo, setSelectedInfo] = useState<string | null>(null);
@@ -92,8 +101,17 @@ const App: React.FC = () => {
     return key;
   }, [userApiKey]);
 
-  const playSound = useCallback((soundUrl: string) => {
-    const sound = new Audio(soundUrl);
+  const audioCache = useMemo(() => {
+    const audioElements: { [key: string]: HTMLAudioElement } = {};
+    for (const key in soundUrls) {
+        audioElements[key] = new Audio(soundUrls[key as keyof typeof soundUrls]);
+        audioElements[key].load(); // Pre-load the audio
+    }
+    return audioElements;
+  }, []);
+
+  const playSound = useCallback((sound: HTMLAudioElement) => {
+    sound.currentTime = 0; // Rewind to start
     sound.play().catch(error => {
       if (error.name !== 'NotAllowedError' && error.name !== 'AbortError') {
         console.error("Error playing sound:", error);
@@ -101,29 +119,12 @@ const App: React.FC = () => {
     });
   }, []);
 
-  const playBabyBornSound = useCallback(() => {
-    playSound('https://github.com/copperbleach/sp8393-nyu.edu/raw/refs/heads/main/Assets/Bob.wav');
-  }, [playSound]);
-  
-  const playExtinctionSound = useCallback(() => {
-    playSound('https://github.com/copperbleach/sp8393-nyu.edu/raw/refs/heads/main/Assets/Bell.mp3');
-  }, [playSound]);
-
-  const playDeathSound = useCallback(() => {
-    playSound('https://github.com/copperbleach/sp8393-nyu.edu/raw/refs/heads/main/Assets/Fart.mp3');
-  }, [playSound]);
-
-  const playToxicGasSound = useCallback(() => {
-    playSound('https://github.com/copperbleach/sp8393-nyu.edu/raw/refs/heads/main/Assets/Spray.wav');
-  }, [playSound]);
-
-  const playTeleportSound = useCallback(() => {
-    playSound('https://github.com/copperbleach/sp8393-nyu.edu/raw/refs/heads/main/Assets/Teleport.mp3');
-  }, [playSound]);
-
-  const playMunchSound = useCallback(() => {
-    playSound('https://github.com/copperbleach/sp8393-nyu.edu/raw/refs/heads/main/Assets/Munch.wav');
-  }, [playSound]);
+  const playBabyBornSound = useCallback(() => playSound(audioCache.babyBorn), [playSound, audioCache]);
+  const playExtinctionSound = useCallback(() => playSound(audioCache.extinction), [playSound, audioCache]);
+  const playDeathSound = useCallback(() => playSound(audioCache.death), [playSound, audioCache]);
+  const playToxicGasSound = useCallback(() => playSound(audioCache.toxicGas), [playSound, audioCache]);
+  const playTeleportSound = useCallback(() => playSound(audioCache.teleport), [playSound, audioCache]);
+  const playMunchSound = useCallback(() => playSound(audioCache.munch), [playSound, audioCache]);
 
   useEffect(() => {
     if (showExtinctionSummary) {
