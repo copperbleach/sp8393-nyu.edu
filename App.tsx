@@ -1176,10 +1176,17 @@ Ensure all configuration values are within reasonable bounds similar to the refe
         },
       });
 
-      const responseText = response.text;
-      if (!responseText) {
-        throw new Error("AI response was empty.");
-      }
+    // Gemini SDK returns JSON here when using responseSchema
+    const responseText =
+      response.outputText ??
+      response.candidates?.[0]?.content?.parts?.[0]?.text ??
+      "";
+    
+    if (!responseText) {
+      console.error("Raw Gemini response:", response);
+      throw new Error("AI response was empty or unrecognized format.");
+    }
+
       
       let newEcosystemData;
       try {
