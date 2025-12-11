@@ -965,17 +965,113 @@ const App: React.FC = () => {
     setIsGeneratingEcosystem(true);
     try {
       const ai = new GoogleGenAI({ apiKey });
+      
+      const referenceExample = [
+        {
+          "name": "Sunpetal",
+          "initialCount": 30,
+          "appearance": { "size": 15, "color": "#9FE2BF", "shape": "Shape1", "type": "0" },
+          "behavior": { "dayActive": true, "nightActive": false, "lifespan": 120000, "growth": 10000, "range": 40, "density": 5 }
+        },
+        {
+           "name": "LeafHopper",
+           "initialCount": 10,
+           "appearance": { "size": 25, "color": "#B5C87E", "shape": "Shape2", "type": "1" },
+           "behavior": { "dayActive": true, "nightActive": false, "lifespan": 180000, "eatingCooldown": 10000, "starvationTime": 50000, "reproductionCooldown": 40000, "maturationTime": 20000, "minOffspring": 1, "maxOffspring": 3, "speed": 20, "eats": ["Sunpetal"] }
+        },
+        {
+            "name": "ApexStalker",
+            "initialCount": 4,
+            "appearance": { "size": 45, "color": "#FF6B6B", "shape": "Shape5", "type": "1" },
+            "behavior": { "dayActive": true, "nightActive": true, "lifespan": 300000, "eatingCooldown": 25000, "starvationTime": 120000, "reproductionCooldown": 90000, "maturationTime": 45000, "minOffspring": 1, "maxOffspring": 2, "speed": 30, "eats": ["LeafHopper"], "specials": [{ "type": "TELEPORTATION", "name": "Blink", "description": "Teleports.", "enabled": true, "duration": 500, "cooldown": 30000 }] }
+        }
+      ];
+
       const prompt = `You are an AI assistant for a web-based ecosystem simulator. Your task is to invent a complete, balanced ecosystem with exactly 6 unique elements (a mix of plants and creatures).
 
-The ecosystem should form a stable food web. The available shapes are 'Shape1' through 'Shape10'. Please assign a varied selection of these shapes.
+The ecosystem must form a stable food web:
+- Plants produce food.
+- Herbivores eat plants.
+- Carnivores/omnivores eat other creatures.
 
-You can assign special abilities to a maximum of two creatures, with each having only one special. For a creature with a special, add a "specials" property to its "behavior" object as an array with a single special ability object. The "enabled" property for the special should be set to true.
+You must assign each element a shape from the available set: 'Shape1' through 'Shape10'. Use a varied selection across the 6 elements.
 
-Ensure all configuration values are within reasonable bounds (e.g., starvationTime > eatingCooldown).
+====================================================================
+### RULES FOR PLANTS
+For any element with "type": "0":
+- 1 ≤ Lifespan ≤ 3600 seconds
+- 5 ≤ Growth ≤ 360 seconds
+- 10 ≤ Range ≤ 60
+- 1 ≤ Density ≤ 10
 
-Return your response as a single JSON object with one root key: "ecosystem". The value should be an array of exactly 6 element objects. Do not include any other text or markdown.
+Convert all durations to MILLISECONDS.
 
-For the 'type' property: "0" is for PLANT and "1" is for CREATURE (it must be a string).`;
+AI-generated plant **starting population** MUST be between **10 and 30**.
+
+====================================================================
+### RULES FOR CREATURES
+For any element with "type": "1":
+- 1 ≤ Speed ≤ 99
+- 30 ≤ Lifespan ≤ 3600 seconds
+- 5 ≤ Hunger ≤ 180 seconds
+- 10 ≤ Starvation ≤ 180 seconds
+- 5 ≤ Reproduction ≤ 1200 seconds
+- Offspring count must be a small range (e.g., "1~3")
+- Maturation < Lifespan
+- Hunger < Starvation < Lifespan
+- Reproduction < Lifespan
+
+Convert all durations to MILLISECONDS.
+
+AI-generated creature **starting population** MUST be between **2 and 10**.
+
+====================================================================
+### SPECIAL ABILITIES
+You may assign **special abilities to at most two creatures**.
+Allowed special types (ONLY):
+- 'TOXIC_GAS'
+- 'TELEPORTATION'
+- 'HIBERNATION'
+- 'SPIKE'
+
+If a creature has a special ability:
+Add to its "behavior" object:
+"specials": [
+  {
+    "type": "<SPECIAL_NAME>",
+    "enabled": true,
+    "duration": <milliseconds>,
+    "cooldown": <milliseconds>
+  }
+]
+
+Duration and cooldown values must follow reasonable ranges, inspired by the reference example.
+
+====================================================================
+### TIME UNITS
+ALL timing values (lifespan, growth, hunger, cooldowns, etc.) MUST be in MILLISECONDS.
+Example: 30 seconds = 30000.
+
+====================================================================
+### OUTPUT FORMAT REQUIREMENTS
+Return a single JSON object with one root key:
+{
+  "ecosystem": [ ...6 elements... ]
+}
+
+Do NOT include any other text or markdown.
+
+For the 'type' property:
+- "0" = PLANT
+- "1" = CREATURE
+(The type MUST be a string.)
+
+====================================================================
+### REFERENCE EXAMPLE (subset)
+${JSON.stringify(referenceExample)}
+
+Ensure all configuration values are within reasonable bounds similar to the reference example.
+`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -1019,7 +1115,21 @@ For the 'type' property: "0" is for PLANT and "1" is for CREATURE (it must be a 
                         dayActive: { type: Type.BOOLEAN },
                         nightActive: { type: Type.BOOLEAN },
                         lifespan: { type: Type.INTEGER },
-                        specials: { type: Type.ARRAY, items: { type: Type.OBJECT } }
+                        specials: {
+                          type: Type.ARRAY,
+                          items: {
+                            type: Type.OBJECT,
+                            properties: {
+                              type: { type: Type.STRING, enum: ['TOXIC_GAS', 'TELEPORTATION', 'HIBERNATION', 'SPIKE'] },
+                              name: { type: Type.STRING },
+                              description: { type: Type.STRING },
+                              enabled: { type: Type.BOOLEAN },
+                              duration: { type: Type.INTEGER },
+                              cooldown: { type: Type.INTEGER },
+                            },
+                            required: ['type', 'name', 'enabled', 'duration', 'cooldown'],
+                          }
+                        }
                       },
                       required: ['dayActive', 'nightActive', 'lifespan']
                     },
