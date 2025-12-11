@@ -1505,10 +1505,36 @@ Ensure all configuration values are within reasonable bounds similar to the refe
             </button>
             <div className="flex space-x-2">
                  <button onClick={handleGlobalCopy} className="flex-1 bg-white hover:bg-gray-100 text-gray-700 py-2 rounded flex justify-center items-center transition-colors border border-gray-200" title="Copy All Configuration">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 12H4a2 2 0 0 1 -2 -2V4a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2" /><path d="M10 16H8a2 2 0 0 1 -2 -2V8a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2" /><rect x="10" y="10" width="10" height="10" rx="2" /></svg>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-5 w-5"
+                    >
+                      <rect x="10" y="10" width="8" height="8" rx="2" />
+                      <rect x="6" y="6" width="8" height="8" rx="2" />
+                      <rect x="2" y="2" width="8" height="8" rx="2" />
+                    </svg>
                  </button>
                  <button onClick={handleGlobalPaste} className="flex-1 bg-white hover:bg-gray-100 text-gray-700 py-2 rounded flex justify-center items-center transition-colors border border-gray-200" title="Paste Configuration">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 12H4a2 2 0 0 1 -2 -2V4a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2" /><path d="M10 16H8a2 2 0 0 1 -2 -2V8a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2" /><rect x="10" y="10" width="10" height="10" rx="2" fill="currentColor" /></svg>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-5 w-5"
+                    >
+                      <rect x="10" y="10" width="8" height="8" rx="2" fill="currentColor" />
+                      <rect x="6" y="6" width="8" height="8" rx="2" />
+                      <rect x="2" y="2" width="8" height="8" rx="2" />
+                    </svg>
                  </button>
             </div>
             <button onClick={handleReboot} className="w-full bg-[#FF6666] hover:bg-[#E55A5A] text-white font-bold py-2 px-4 rounded transition-colors">Reboot</button>
