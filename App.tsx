@@ -47,10 +47,15 @@ const App: React.FC = () => {
   const [elements, setElements] = useState<EcosystemElement[]>([]);
   const [selectedInfo, setSelectedInfo] = useState<string | null>(null);
   const [initialCounts, setInitialCounts] = useState<Record<string, number>>({ 'GreenDot': 20, 'Fafa': 5, 'Keke': 2 });
+  
   const [behaviorConfig, setBehaviorConfig] = useState<Record<string, PlantBehavior | CreatureBehavior>>(initialBehaviorConfig);
   const [simBehaviorConfig, setSimBehaviorConfig] = useState<Record<string, PlantBehavior | CreatureBehavior>>(initialBehaviorConfig);
   const simBehaviorConfigRef = useRef(initialBehaviorConfig);
+  
   const [appearanceConfig, setAppearanceConfig] = useState(initialAppearanceConfig);
+  const [simAppearanceConfig, setSimAppearanceConfig] = useState(initialAppearanceConfig);
+  const simAppearanceConfigRef = useRef(initialAppearanceConfig);
+
   const [dayCount, setDayCount] = useState(1);
   const [isDay, setIsDay] = useState(true);
   const [showCreationModal, setShowCreationModal] = useState(false);
@@ -133,9 +138,12 @@ const App: React.FC = () => {
     }
   }, [showExtinctionSummary, playExtinctionSound]);
 
-  const createPlant = useCallback((plantType: PlantType, x: number, y: number, isInitial: boolean = false): Plant => {
-    const appearance = appearanceConfig[plantType];
+  const createPlant = useCallback((plantType: PlantType, x: number, y: number, isInitial: boolean = false): Plant | null => {
+    const appearance = simAppearanceConfigRef.current[plantType];
     const behavior = simBehaviorConfigRef.current[plantType] as PlantBehavior;
+    
+    if (!appearance || !behavior) return null;
+
     return {
       id: crypto.randomUUID(),
       elementType: ElementType.PLANT,
@@ -145,12 +153,14 @@ const App: React.FC = () => {
       birthTimestamp: performance.now(),
       lastGrowthTimestamp: isInitial ? performance.now() - getRandomNumber(0, behavior.growth) : performance.now(),
     };
-  }, [appearanceConfig]);
+  }, []);
 
-  const createCreature = useCallback((creatureType: CreatureType, x: number, y: number, isBaby: boolean = false, parentId?: string): Creature => {
+  const createCreature = useCallback((creatureType: CreatureType, x: number, y: number, isBaby: boolean = false, parentId?: string): Creature | null => {
     const now = performance.now();
-    const appearance = appearanceConfig[creatureType];
+    const appearance = simAppearanceConfigRef.current[creatureType];
     const behavior = simBehaviorConfigRef.current[creatureType] as CreatureBehavior;
+
+    if (!appearance || !behavior) return null;
 
     let creatureColor: string | undefined;
     let creatureEyeColor: string | undefined;
@@ -180,7 +190,7 @@ const App: React.FC = () => {
       isCyclops: creatureIsCyclops,
       lastSpecialUsed: {},
     };
-  }, [appearanceConfig, mutationConfig]);
+  }, [mutationConfig]);
 
   const processGlobalPaste = (text: string) => {
     try {
@@ -243,17 +253,23 @@ const App: React.FC = () => {
         if (element.elementType === ElementType.PLANT) {
           const plant = { ...updatedElement } as Plant;
           const behavior = simBehaviorConfigRef.current[plant.plantType] as PlantBehavior;
+          const appearance = simAppearanceConfigRef.current[plant.plantType];
           
+          if (!behavior || !appearance) {
+              idsToRemove.add(plant.id);
+              continue;
+          }
+
           if (now - plant.birthTimestamp > behavior.lifespan) {
             idsToRemove.add(plant.id);
             continue;
           }
 
           if (eventEffect === 'PLANT_SIZE_PULSE') {
-            const baseSize = appearanceConfig[plant.plantType].size;
+            const baseSize = appearance.size;
             plant.size = baseSize + Math.sin(now / 200) * (baseSize * 0.25);
           } else {
-             plant.size = appearanceConfig[plant.plantType].size;
+             plant.size = appearance.size;
           }
 
           const isActive = (newIsDay && behavior.dayActive) || (!newIsDay && behavior.nightActive);
@@ -264,18 +280,27 @@ const App: React.FC = () => {
               const angle = Math.random() * 2 * Math.PI;
               const newX = plant.x + Math.cos(angle) * getRandomNumber(plant.size, behavior.range);
               const newY = plant.y + Math.sin(angle) * getRandomNumber(plant.size, behavior.range);
-              elementsToAdd.push(createPlant(plant.plantType,
+              
+              const newPlant = createPlant(plant.plantType,
                 Math.max(0, Math.min(bounds.width - plant.size, newX)), 
                 Math.max(0, Math.min(bounds.height - plant.size, newY))
-              ));
-              plant.lastGrowthTimestamp = now;
+              );
+              if (newPlant) {
+                elementsToAdd.push(newPlant);
+                plant.lastGrowthTimestamp = now;
+              }
             }
           }
           updatedElement = plant;
         } else if (element.elementType === ElementType.CREATURE) {
           let creature = { ...updatedElement } as Creature;
-          const behavior = { ...simBehaviorConfigRef.current[creature.creatureType] } as CreatureBehavior;
-          const appearance = appearanceConfig[creature.creatureType];
+          const behavior = simBehaviorConfigRef.current[creature.creatureType] as CreatureBehavior; // Cast to specific
+          const appearance = simAppearanceConfigRef.current[creature.creatureType];
+          
+          if (!behavior || !appearance) {
+              idsToRemove.add(creature.id);
+              continue;
+          }
           
           const isHibernating = creature.hibernationEndTime && now < creature.hibernationEndTime;
           const hasSpikes = creature.spikeEndTime && now < creature.spikeEndTime;
@@ -371,6 +396,7 @@ const App: React.FC = () => {
                     if (idsToRemove.has(other.id)) return false;
                     
                     const diet = (simBehaviorConfigRef.current[creature.creatureType] as CreatureBehavior).eats;
+                    if (!diet) return false; // Safety check
 
                     if (other.elementType === ElementType.PLANT) {
                         return diet.includes(other.plantType);
@@ -433,11 +459,12 @@ const App: React.FC = () => {
                    else if (isReadyToMate && target.elementType === ElementType.CREATURE) {
                       const mate = target as Creature;
                       const mateBehavior = simBehaviorConfigRef.current[mate.creatureType] as CreatureBehavior;
-                      if (now - mate.lastReproducedTimestamp > mateBehavior.reproductionCooldown) {
+                      if (mateBehavior && now - mate.lastReproducedTimestamp > mateBehavior.reproductionCooldown) {
                         const offspringCount = Math.floor(getRandomNumber(behavior.minOffspring, behavior.maxOffspring + 1));
                         if (offspringCount > 0) playBabyBornSound();
                         for (let i = 0; i < offspringCount; i++) {
-                          elementsToAdd.push(createCreature(creature.creatureType, creature.x, creature.y, true, creature.id));
+                          const newborn = createCreature(creature.creatureType, creature.x, creature.y, true, creature.id);
+                          if (newborn) elementsToAdd.push(newborn);
                         }
                         creature.lastReproducedTimestamp = now;
                         const originalMate = elementMap.get(mate.id) as Creature;
@@ -499,7 +526,7 @@ const App: React.FC = () => {
       return nextElements;
     });
     animationFrameId.current = requestAnimationFrame(() => gameLoopRef.current?.());
-  }, [createCreature, createPlant, playBabyBornSound, appearanceConfig, isSimRunning, hadCreaturesInitially, playDeathSound, playToxicGasSound, playTeleportSound, playMunchSound]);
+  }, [createCreature, createPlant, playBabyBornSound, isSimRunning, hadCreaturesInitially, playDeathSound, playToxicGasSound, playTeleportSound, playMunchSound]);
 
   useEffect(() => {
     gameLoopRef.current = gameLoop;
@@ -516,6 +543,9 @@ const App: React.FC = () => {
 
     setSimBehaviorConfig(behaviorConfig);
     simBehaviorConfigRef.current = behaviorConfig;
+    
+    setSimAppearanceConfig(appearanceConfig);
+    simAppearanceConfigRef.current = appearanceConfig;
 
     extinctionEventTriggeredRef.current = false;
     setIsSimRunning(true);
@@ -541,9 +571,11 @@ const App: React.FC = () => {
           const x = getRandomNumber(0, width - appearance.size);
           const y = getRandomNumber(0, height - appearance.size);
           if (appearance.type === ElementType.PLANT) {
-            initialElements.push(createPlant(typeName, x, y, true));
+            const p = createPlant(typeName, x, y, true);
+            if (p) initialElements.push(p);
           } else {
-            initialElements.push(createCreature(typeName, x, y));
+            const c = createCreature(typeName, x, y);
+            if (c) initialElements.push(c);
           }
         }
       });
@@ -1198,8 +1230,6 @@ Ensure all configuration values are within reasonable bounds similar to the refe
               newInitialCounts[name] = initialCount;
           }
 
-          setSelectedInfo(null);
-          setElements([]);
           setAppearanceConfig(newAppearanceConfig);
           setBehaviorConfig(newBehaviorConfig);
           setInitialCounts(newInitialCounts);
@@ -1375,7 +1405,7 @@ Ensure all configuration values are within reasonable bounds similar to the refe
 
   const instanceCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const typeName of Object.keys(appearanceConfig)) {
+    for (const typeName of Object.keys(simAppearanceConfig)) {
         counts[typeName] = 0;
     }
 
@@ -1389,7 +1419,7 @@ Ensure all configuration values are within reasonable bounds similar to the refe
         }
     }
     return counts;
-  }, [elements, appearanceConfig]);
+  }, [elements, simAppearanceConfig]);
 
   return (
     <div className="flex w-screen h-screen text-gray-800" style={{backgroundColor: '#EBEBEB'}}>
@@ -1468,10 +1498,10 @@ Ensure all configuration values are within reasonable bounds similar to the refe
             </button>
             <div className="flex space-x-2">
                  <button onClick={handleGlobalCopy} className="flex-1 bg-white hover:bg-gray-100 text-gray-700 py-2 rounded flex justify-center items-center transition-colors border border-gray-200" title="Copy All Configuration">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 12H4a2 2 0 0 1 -2 -2V4a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2" /><path d="M10 16H8a2 2 0 0 1 -2 -2V8a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2" /><rect x="10" y="10" width="10" height="10" rx="2" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 12H4a2 2 0 0 1 -2 -2V4a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2" /><path d="M10 16H8a2 2 0 0 1 -2 -2V8a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2" /><rect x="10" y="10" width="10" height="10" rx="2" /></svg>
                  </button>
                  <button onClick={handleGlobalPaste} className="flex-1 bg-white hover:bg-gray-100 text-gray-700 py-2 rounded flex justify-center items-center transition-colors border border-gray-200" title="Paste Configuration">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 12H4a2 2 0 0 1 -2 -2V4a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2" /><path d="M10 16H8a2 2 0 0 1 -2 -2V8a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2" /><rect x="10" y="10" width="10" height="10" rx="2" fill="currentColor" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 12H4a2 2 0 0 1 -2 -2V4a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2" /><path d="M10 16H8a2 2 0 0 1 -2 -2V8a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2" /><rect x="10" y="10" width="10" height="10" rx="2" fill="currentColor" /></svg>
                  </button>
             </div>
             <button onClick={handleReboot} className="w-full bg-[#FF6666] hover:bg-[#E55A5A] text-white font-bold py-2 px-4 rounded transition-colors">Reboot</button>
@@ -1538,7 +1568,7 @@ Ensure all configuration values are within reasonable bounds similar to the refe
 
         {elements.filter(el => !activeEffects.some(eff => eff.type === 'TELEPORTATION' && eff.creatureId === el.id)).map(element => {
           const typeName = element.elementType === ElementType.PLANT ? (element as Plant).plantType : (element as Creature).creatureType;
-          const appearance = appearanceConfig[typeName];
+          const appearance = simAppearanceConfig[typeName];
           if (!appearance) return null;
           const shapeStyle = getShapeStyle(appearance.shape);
 
@@ -1596,7 +1626,7 @@ Ensure all configuration values are within reasonable bounds similar to the refe
         })}
       </div>
       
-      <InstanceCounter counts={instanceCounts} appearanceConfig={appearanceConfig} />
+      <InstanceCounter counts={instanceCounts} appearanceConfig={simAppearanceConfig} />
 
       <button onClick={() => setShowDebug(prev => !prev)} className="fixed bottom-4 right-4 bg-white p-3 rounded-full shadow-lg hover:bg-gray-100 z-50 border border-gray-300 transition-transform hover:scale-105" title="Debug Tools">
          <svg className="w-6 h-6 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
